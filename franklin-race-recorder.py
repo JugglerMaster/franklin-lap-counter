@@ -267,6 +267,14 @@ class RaceRecorder:
             logging.info("Applying reset_race from hardware:in command (fallback)")
             self._apply_and_publish(self.engine.reset())
             return
+        if command == "pause_race":
+            logging.info("Applying pause_race from hardware:in command (fallback)")
+            self._apply_and_publish(self.engine.pause_race())
+            return
+        if command == "resume_race":
+            logging.info("Applying resume_race from hardware:in command (fallback)")
+            self._apply_and_publish(self.engine.resume_race())
+            return
         if command != "start_race":
             return
         config = self._config_from_command(msg)

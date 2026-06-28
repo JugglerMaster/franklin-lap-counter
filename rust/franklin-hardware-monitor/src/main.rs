@@ -1108,6 +1108,34 @@ async fn command_handler_task(hw: Arc<HardwareComm>, app: Arc<Mutex<App>>) -> Re
 
                             info!("{}", status_message);
                         }
+                        "pause_race" => {
+                            let _ = hw.send_message(&OutMessage::RaceControl {
+                                command: "pause_race".to_string(),
+                                command_id: command_id.clone(),
+                                recorded_at: now_epoch_seconds(),
+                                accepted: true,
+                                message: Some("Race paused".to_string()),
+                                racer_id: None,
+                                penalty_seconds: None,
+                                reason: None,
+                                lap_number: None,
+                            });
+                            info!("Race pause requested");
+                        }
+                        "resume_race" => {
+                            let _ = hw.send_message(&OutMessage::RaceControl {
+                                command: "resume_race".to_string(),
+                                command_id: command_id.clone(),
+                                recorded_at: now_epoch_seconds(),
+                                accepted: true,
+                                message: Some("Race resumed".to_string()),
+                                racer_id: None,
+                                penalty_seconds: None,
+                                reason: None,
+                                lap_number: None,
+                            });
+                            info!("Race resume requested");
+                        }
                         "end_race" => {
                             // Get simulation mode from app state
                             let rt = tokio::runtime::Handle::current();

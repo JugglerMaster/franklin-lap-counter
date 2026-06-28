@@ -56,6 +56,7 @@ class RefereeWebAppServer:
         self.redis_pubsub: Any | None = None
         self.websockets: set[web.WebSocketResponse] = set()
         self.db = LapDatabase("franklin.db")
+        self._pending_operators: dict[str, str] = {}
 
         self.app.router.add_get("/", self.index_handler)
         self.app.router.add_get("/ws", self.websocket_handler)
@@ -64,6 +65,8 @@ class RefereeWebAppServer:
 
         self.app.router.add_post("/api/control/start_race", self.start_race_handler)
         self.app.router.add_post("/api/control/end_race", self.end_race_handler)
+        self.app.router.add_post("/api/control/pause_race", self.pause_race_handler)
+        self.app.router.add_post("/api/control/resume_race", self.resume_race_handler)
         self.app.router.add_post("/api/control/reset_race", self.reset_race_handler)
         self.app.router.add_post("/api/control/add_penalty", self.add_penalty_handler)
         self.app.router.add_post("/api/control/remove_lap", self.remove_lap_handler)
@@ -137,12 +140,15 @@ class RefereeWebAppServer:
             raise RuntimeError("Redis not connected")
 
         command = str(payload.get("command", ""))
+        operator = payload.pop("operator", None)
         fields = {k: v for k, v in payload.items() if k != "command"}
         envelope = build_command_envelope(
             command,
             source="referee_web_app",
             **fields,
         )
+        if operator:
+            self._pending_operators[envelope["command_id"]] = operator
         validated = parse_command_envelope(envelope)
 
         await self.redis_client.publish(REDIS_IN_CHANNEL, json.dumps(validated))
@@ -170,11 +176,16 @@ class RefereeWebAppServer:
         await self._publish_command(payload)
         return web.json_response({"ok": True, "published": payload})
 
-    async def reset_race_handler(self, request: web.Request) -> web.Response:
+    async def pause_race_handler(self, request: web.Request) -> web.Response:
         guard = self._require_race_in_progress()
         if guard:
             return guard
-        payload = {"command": "reset_race"}
+        payload = {"command": "pause_race"}
+        await self._publish_command(payload)
+        return web.json_response({"ok": True, "published": payload})
+
+    async def resume_race_handler(self, request: web.Request) -> web.Response:
+        payload = {"command": "resume_race"}
         await self._publish_command(payload)
         return web.json_response({"ok": True, "published": payload})
 
@@ -333,6 +344,12 @@ class RefereeWebAppServer:
 
         accepted = bool(msg.get("accepted", False))
         race_id = self._infer_current_race_id_for_audit()
+        command_id = msg.get("command_id")
+        operator = (
+            self._pending_operators.pop(str(command_id), None)
+            if command_id
+            else None
+        )
 
         try:
             self.db.add_race_control_action(
@@ -340,6 +357,7 @@ class RefereeWebAppServer:
                 accepted=accepted,
                 payload=msg,
                 race_id=race_id,
+                operator=operator,
             )
         except Exception as exc:
             logger.error("Failed to write race-control audit row: %s", exc)

@@ -89,6 +89,7 @@ class RaceEngine:
         # Epoch clock anchors for snapshots (process-independent).
         self._start_at_epoch: float | None = None
         self._end_at_epoch: float | None = None
+        self._paused_at_epoch: float | None = None
 
         # Dedupe guard so a redelivered lap event is not double-counted.
         self._seen_laps: set[tuple[int, float]] = set()
@@ -128,6 +129,7 @@ class RaceEngine:
         self.race = race
         self._start_at_epoch = float(start_at)
         self._end_at_epoch = None
+        self._paused_at_epoch = None
         self.racer_penalties_seconds.clear()
         self.disqualified_racers.clear()
         self._seen_laps.clear()
@@ -157,6 +159,23 @@ class RaceEngine:
         self._finalize(end_at=at)
         return EngineResult(changed=True, finished_now=False, note="ended")
 
+    def pause_race(self) -> EngineResult:
+        if self.race.state != RaceState.RUNNING:
+            return EngineResult(changed=False, note="not_running")
+        self._paused_at_epoch = time.time()
+        self.race.state = RaceState.PAUSED
+        return EngineResult(changed=True, note="paused")
+
+    def resume_race(self) -> EngineResult:
+        if self.race.state != RaceState.PAUSED:
+            return EngineResult(changed=False, note="not_paused")
+        if self._paused_at_epoch is not None:
+            pause_duration = time.time() - self._paused_at_epoch
+            self._start_at_epoch += pause_duration
+            self._paused_at_epoch = None
+        self.race.state = RaceState.RUNNING
+        return EngineResult(changed=True, note="resumed")
+
     def reset(self) -> EngineResult:
         """Clear the current race back to a fresh, not-started state."""
         self.racer_penalties_seconds.clear()
@@ -177,11 +196,13 @@ class RaceEngine:
         self.race = race
         self._start_at_epoch = None
         self._end_at_epoch = None
+        self._paused_at_epoch = None
         return EngineResult(changed=True, note="reset")
 
     def _finalize(self, *, end_at: float | None = None) -> None:
         self.previous_race = self.race
         self._end_at_epoch = float(end_at) if end_at is not None else time.time()
+        self._paused_at_epoch = None
         if self.current_race_id is not None and self.persist:
             try:
                 self.db.end_race(self.current_race_id, end_at=self._end_at_epoch)
@@ -294,6 +315,10 @@ class RaceEngine:
             return self.reset()
         if command == "end_race":
             return self.end_race()
+        if command == "pause_race":
+            return self.pause_race()
+        if command == "resume_race":
+            return self.resume_race()
         if command == "add_penalty" and racer_id is not None:
             return self.add_penalty(racer_id, int(msg.get("penalty_seconds", 0) or 0))
         if command == "disqualify_racer" and racer_id is not None:
@@ -582,6 +607,8 @@ class RaceEngine:
     def _elapsed_seconds(self, now: float) -> float:
         if self._start_at_epoch is None:
             return 0.0
+        if self.race.state == RaceState.PAUSED and self._paused_at_epoch is not None:
+            return max(0.0, self._paused_at_epoch - self._start_at_epoch)
         if self.race.state in (RaceState.RUNNING, RaceState.WINNER_DECLARED):
             return max(0.0, now - self._start_at_epoch)
         if self.race.state == RaceState.FINISHED and self._end_at_epoch is not None:

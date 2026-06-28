@@ -7,7 +7,6 @@
         <style>
             :root {
                 color-scheme: light dark;
-
                 --bg: #111;
                 --text: #eee;
                 --control-bg: #222;
@@ -82,6 +81,9 @@
             #events {
                 white-space: pre-wrap;
             }
+            #events.hidden {
+                display: none;
+            }
             .audit-row {
                 display: flex;
                 align-items: center;
@@ -97,10 +99,110 @@
                 padding: 4px 8px;
                 font-size: 12px;
             }
-        </style>
-    </head>
-    <body>
-        <style>
+
+            /* Start lights */
+            .start-lights-row {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                margin-bottom: 12px;
+            }
+            .start-lights {
+                display: flex;
+                gap: 6px;
+            }
+            .start-light {
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                display: inline-block;
+                transition: background 0.3s, box-shadow 0.3s;
+            }
+            .start-light-red {
+                background: #c62828;
+                box-shadow: 0 0 8px #c62828;
+            }
+            .start-light-yellow {
+                background: #f9a825;
+                box-shadow: 0 0 8px #f9a825;
+            }
+            .start-light-green {
+                background: #2e7d32;
+                box-shadow: 0 0 8px #2e7d32;
+            }
+            .race-status {
+                font-size: 1.1rem;
+                font-weight: 600;
+            }
+            .race-clock {
+                font-size: 1.5rem;
+                font-weight: 700;
+                font-family: monospace;
+            }
+            .race-mode-label {
+                font-size: 0.85rem;
+                opacity: 0.7;
+            }
+
+            /* Leaderboard */
+            #leaderboard {
+                margin-bottom: 16px;
+            }
+            #leaderboard table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            #leaderboard th,
+            #leaderboard td {
+                padding: 6px 10px;
+                text-align: left;
+                border-bottom: 1px solid var(--surface-border);
+            }
+            #leaderboard th {
+                font-weight: 600;
+                opacity: 0.7;
+                font-size: 0.85rem;
+            }
+            #leaderboard .pos {
+                text-align: center;
+                font-weight: 700;
+            }
+            #leaderboard .dq {
+                opacity: 0.5;
+                text-decoration: line-through;
+            }
+            #leaderboard .dq-pos {
+                color: #e53935;
+            }
+            #leaderboard .empty {
+                opacity: 0.5;
+                font-style: italic;
+                padding: 20px 10px;
+            }
+            .time-val {
+                font-family: monospace;
+            }
+
+            /* Referee name input */
+            .ref-name-input {
+                font-size: 1.2rem;
+                font-weight: 600;
+                background: transparent;
+                border: none;
+                border-bottom: 2px dashed var(--control-border);
+                color: var(--text);
+                width: 200px;
+                padding: 2px 4px;
+            }
+            .ref-name-input:focus {
+                border-bottom-style: solid;
+                outline: none;
+            }
+            .ref-title {
+                font-size: 1.2rem;
+                font-weight: 400;
+                margin-bottom: 4px;
+            }
             .dash-link {
                 display: inline-block;
                 font-size: 0.8rem;
@@ -111,6 +213,8 @@
             }
             .dash-link:hover { opacity: 1; text-decoration: underline; }
         </style>
+    </head>
+    <body>
         <a id="dashLink" class="dash-link" href="#">← Dashboard</a>
         <script>document.getElementById('dashLink').href = `${location.protocol}//${location.hostname}:8085/dashboard`</script>
 
@@ -122,11 +226,14 @@
             </div>
         </div>
 
+        <p class="ref-title">Hello, I'm referee <input id="ref-name" class="ref-name-input" /></p>
+
         <h1>Referee Control</h1>
 
         <div class="row">
             <button type="button" id="start-race">Start Race</button>
             <button type="button" id="end-race">End Race</button>
+            <button type="button" id="pause-resume-race">Pause Race</button>
             <button type="button" id="reset-race">Reset Race</button>
             <button type="button" id="soundBtn">Sound: on</button>
             <select id="soundStyleSelect" style="width:auto;min-width:120px">
@@ -182,15 +289,21 @@
             </button>
         </div>
 
-        <div class="row">
-            <label>
-                <input type="checkbox" id="hide-status" checked />
-                Hide debug information
-            </label>
+        <div class="start-lights-row" id="race-bar">
+            <div class="start-lights" id="start-lights">
+                <div class="start-light start-light-red"></div>
+                <div class="start-light start-light-red"></div>
+                <div class="start-light start-light-red"></div>
+            </div>
+            <div>
+                <div class="race-status" id="race-status">Ready to start</div>
+                <div class="race-mode-label" id="race-mode-label"></div>
+            </div>
+            <div class="race-clock" id="race-clock">00:00.00</div>
         </div>
 
-        <h2>Live Events</h2>
-        <div id="events"></div>
+        <h2>Scorecard</h2>
+        <div id="leaderboard"></div>
 
         <h2>Audit Log</h2>
         <div class="row">
@@ -205,9 +318,21 @@
         </div>
         <div id="audit"></div>
 
+        <div class="row" style="margin-top:16px">
+            <button type="button" id="toggle-debug">Show Debug</button>
+        </div>
+
+        <h2 id="events-heading" class="hidden">Live Events</h2>
+        <div id="events" class="hidden"></div>
+
+        <style>
+            .hidden { display: none; }
+        </style>
+
         <script src="/static/audio.js"></script>
         <script>
             const eventsEl = document.getElementById("events");
+            const eventsHeading = document.getElementById("events-heading");
             const auditEl = document.getElementById("audit");
 
             const allEntries = [];
@@ -215,29 +340,184 @@
             let countdownActive = false;
             let countdownReadyAt = 0;
             let countdownReadyAtMs = 0;
+            let currentSnapshot = null;
+            let currentRacers = [];
+            let racerLookup = {};
+            let debugVisible = false;
+            let isPaused = false;
+            let clockInterval = null;
 
-            function log(line, msg) {
-                allEntries.push({ line, msg: msg || null, ts: new Date().toLocaleTimeString() });
-                renderEvents();
+            /* ---- Referee name ---- */
+            const refNameInput = document.getElementById("ref-name");
+            refNameInput.value = localStorage.getItem("referee_name") || "Referee";
+            refNameInput.addEventListener("change", () => {
+                localStorage.setItem("referee_name", refNameInput.value);
+            });
+
+            function getOperator() {
+                return refNameInput.value.trim() || "Referee";
             }
 
-            function shouldHide(msg) {
-                if (!document.getElementById("hide-status").checked) return false;
-                if (msg.type === "heartbeat") return true;
-                if (msg.snapshot_seq !== undefined) return true;
-                return false;
+            /* ---- Debug toggle ---- */
+            document.getElementById("toggle-debug").addEventListener("click", () => {
+                debugVisible = !debugVisible;
+                const btn = document.getElementById("toggle-debug");
+                btn.textContent = debugVisible ? "Hide Debug" : "Show Debug";
+                eventsEl.classList.toggle("hidden", !debugVisible);
+                eventsHeading.classList.toggle("hidden", !debugVisible);
+                if (debugVisible) renderEvents();
+            });
+
+            /* ---- Start lights ---- */
+            function setStartLights(state, phase) {
+                const lights = document.querySelectorAll(".start-light");
+                let colors;
+                if (phase === "ready") {
+                    colors = ["green", "red", "red"];
+                } else if (phase === "set") {
+                    colors = ["green", "green", "red"];
+                } else if (phase === "go" || state === "running" || state === "winner_declared") {
+                    colors = ["green", "green", "green"];
+                } else if (state === "paused") {
+                    colors = ["yellow", "yellow", "yellow"];
+                } else {
+                    colors = ["red", "red", "red"];
+                }
+                lights.forEach((el, i) => {
+                    el.className = "start-light start-light-" + colors[i];
+                });
+            }
+
+            /* ---- Race status ---- */
+            function humanizeState(state) {
+                switch (state) {
+                    case "not_started": return "Ready to start";
+                    case "running": return "Race in progress";
+                    case "winner_declared": return "Winner declared, wrapping up";
+                    case "finished": return "Race finished";
+                    case "paused": return "Race paused";
+                    default: return state;
+                }
+            }
+
+            function updateRaceBar(snapshot) {
+                if (!snapshot) {
+                    document.getElementById("race-status").textContent = "Ready to start";
+                    document.getElementById("race-mode-label").textContent = "";
+                    document.getElementById("race-clock").textContent = "00:00.00";
+                    setStartLights("not_started", null);
+                    return;
+                }
+                isPaused = snapshot.state === "paused";
+                document.getElementById("pause-resume-race").textContent = isPaused ? "Resume Race" : "Pause Race";
+                document.getElementById("race-status").textContent = humanizeState(snapshot.state);
+                const modeInfo = [];
+                if (snapshot.race_mode) modeInfo.push(snapshot.race_mode);
+                if (snapshot.total_laps && snapshot.race_mode !== "Training Mode") {
+                    modeInfo.push(snapshot.total_laps + " laps");
+                }
+                document.getElementById("race-mode-label").textContent = modeInfo.join(" · ");
+                updateClock(snapshot);
+                setStartLights(snapshot.state, null);
+            }
+
+            /* ---- Clock ---- */
+            function updateClock(snapshot) {
+                const clockEl = document.getElementById("race-clock");
+                if (!snapshot || !snapshot.elapsed_seconds) {
+                    clockEl.textContent = "00:00.00";
+                    return;
+                }
+                const totalSec = snapshot.elapsed_seconds;
+                const mins = Math.floor(totalSec / 60);
+                const secs = Math.floor(totalSec % 60);
+                const centis = Math.floor((totalSec % 1) * 100);
+                clockEl.textContent =
+                    String(mins).padStart(2, "0") + ":" +
+                    String(secs).padStart(2, "0") + "." +
+                    String(centis).padStart(2, "0");
+            }
+
+            function advanceClock() {
+                if (!currentSnapshot) return;
+                const going = currentSnapshot.state === "running" || currentSnapshot.state === "winner_declared";
+                if (!going) return;
+                const elapsed = currentSnapshot.elapsed_seconds + (Date.now() - currentSnapshot._receivedAt) / 1000;
+                const clockEl = document.getElementById("race-clock");
+                const totalSec = Math.max(0, elapsed);
+                const mins = Math.floor(totalSec / 60);
+                const secs = Math.floor(totalSec % 60);
+                const centis = Math.floor((totalSec % 1) * 100);
+                clockEl.textContent =
+                    String(mins).padStart(2, "0") + ":" +
+                    String(secs).padStart(2, "0") + "." +
+                    String(centis).padStart(2, "0");
+            }
+
+            /* ---- Leaderboard ---- */
+            function fmtTime(val) {
+                if (val == null || val === 0 || !Number.isFinite(val)) return "—";
+                const mins = Math.floor(val / 60);
+                const secs = (val % 60).toFixed(2);
+                if (mins > 0) return mins + ":" + String(secs).padStart(5, "0");
+                return secs + "s";
+            }
+
+            function getRacerName(id) {
+                return racerLookup[id] || "Racer " + id;
+            }
+
+            function renderLeaderboard(snapshot) {
+                const el = document.getElementById("leaderboard");
+                if (!snapshot || !snapshot.leaderboard || snapshot.leaderboard.length === 0) {
+                    el.innerHTML = '<p class="empty">No racers on track yet</p>';
+                    return;
+                }
+                const rows = snapshot.leaderboard;
+                let html = '<table><thead><tr>' +
+                    '<th>Pos</th><th>Racer</th><th>Laps</th>' +
+                    '<th>Best Lap</th><th>Last Lap</th>' +
+                    '<th>Total Time</th><th>Penalty</th><th>Status</th>' +
+                    '</tr></thead><tbody>';
+                for (const row of rows) {
+                    const dq = row.disqualified;
+                    const pos = dq ? "DQ" : row.position;
+                    html += '<tr class="' + (dq ? 'dq' : '') + '">' +
+                        '<td class="pos ' + (dq ? 'dq-pos' : '') + '">' + pos + '</td>' +
+                        '<td>' + escapeHtml(getRacerName(row.racer_id)) + '</td>' +
+                        '<td>' + row.lap_count + '</td>' +
+                        '<td class="time-val">' + fmtTime(row.best_lap_time) + '</td>' +
+                        '<td class="time-val">' + fmtTime(row.last_lap_time) + '</td>' +
+                        '<td class="time-val">' + fmtTime(row.adjusted_total_time) + '</td>' +
+                        '<td>' + (row.penalty_seconds > 0 ? '+' + row.penalty_seconds + 's' : '—') + '</td>' +
+                        '<td>' + (dq ? 'Disqualified' : '') + '</td>' +
+                        '</tr>';
+                }
+                html += '</tbody></table>';
+                el.innerHTML = html;
+            }
+
+            function escapeHtml(str) {
+                const div = document.createElement("div");
+                div.textContent = str;
+                return div.innerHTML;
+            }
+
+            /* ---- Logging ---- */
+            function log(line, msg) {
+                allEntries.push({ line, msg: msg || null, ts: new Date().toLocaleTimeString() });
+                if (debugVisible) renderEvents();
             }
 
             function renderEvents() {
-                const hide = document.getElementById("hide-status").checked;
                 eventsEl.textContent = "";
                 for (const entry of allEntries) {
-                    if (hide && entry.msg && shouldHide(entry.msg)) continue;
-                    eventsEl.textContent += `[${entry.ts}] ${entry.line}\n`;
+                    eventsEl.textContent += "[" + entry.ts + "] " + entry.line + "\n";
                 }
                 eventsEl.scrollTop = eventsEl.scrollHeight;
             }
 
+            /* ---- Audit ---- */
             async function copyToClipboard(value) {
                 if (!value) {
                     throw new Error("No command_id available to copy");
@@ -250,15 +530,16 @@
                 const status = a.accepted ? "accepted" : "rejected";
                 const cmdId = a.command_id || "-";
                 const details = [];
-                if (a.racer_id != null) details.push(`racer_id=${a.racer_id}`);
+                if (a.racer_id != null) details.push("racer_id=" + a.racer_id);
                 if (a.lap_number != null)
-                    details.push(`lap_number=${a.lap_number}`);
+                    details.push("lap_number=" + a.lap_number);
                 if (a.penalty_seconds != null)
-                    details.push(`penalty_seconds=${a.penalty_seconds}`);
-                if (a.reason) details.push(`reason=${a.reason}`);
-                if (a.message) details.push(`message=${a.message}`);
-
-                return `[${ts}] ${a.command} ${status} command_id=${cmdId}${details.length ? ` (${details.join(", ")})` : ""}`;
+                    details.push("penalty_seconds=" + a.penalty_seconds);
+                if (a.reason) details.push("reason=" + a.reason);
+                if (a.message) details.push("message=" + a.message);
+                if (a.operator) details.push("operator=" + a.operator);
+                return "[" + ts + "] " + a.command + " " + status + " command_id=" + cmdId +
+                    (details.length ? " (" + details.join(", ") + ")" : "");
             }
 
             function renderAudit(actions) {
@@ -281,7 +562,7 @@
                     const commandId = action.command_id;
                     if (commandId) {
                         copyButton.dataset.commandId = commandId;
-                        copyButton.title = `Copy command_id ${commandId}`;
+                        copyButton.title = "Copy command_id " + commandId;
                     } else {
                         copyButton.disabled = true;
                         copyButton.title = "No command_id for this row";
@@ -307,22 +588,24 @@
                     if (limitRaw !== "") params.set("limit", limitRaw);
 
                     const res = await fetch(
-                        `/api/control/audit?${params.toString()}`,
+                        "/api/control/audit?" + params.toString(),
                     );
                     const data = await res.json();
                     if (!res.ok || !data.ok) {
                         throw new Error(
-                            data.error || `Request failed (${res.status})`,
+                            data.error || "Request failed (" + res.status + ")",
                         );
                     }
                     renderAudit(data.actions || []);
-                    log(`Loaded ${data.count || 0} audit rows`);
+                    log("Loaded " + (data.count || 0) + " audit rows");
                 } catch (err) {
-                    log(`ERROR: ${err.message}`);
+                    log("ERROR: " + err.message);
                 }
             }
 
+            /* ---- Commands ---- */
             async function postJson(url, body = {}) {
+                body.operator = getOperator();
                 const res = await fetch(url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -336,7 +619,7 @@
 
                 if (!res.ok) {
                     throw new Error(
-                        data.error || `Request failed (${res.status})`,
+                        data.error || "Request failed (" + res.status + ")",
                     );
                 }
 
@@ -346,36 +629,46 @@
             document.getElementById("start-race").onclick = async () => {
                 try {
                     await postJson("/api/control/start_race");
-                    log("Sent: start_race");
+                    log("Sent: start_race (operator=" + getOperator() + ")");
                 } catch (err) {
-                    log(`ERROR: ${err.message}`);
+                    log("ERROR: " + err.message);
                 }
             };
 
             document.getElementById("end-race").onclick = async () => {
                 try {
                     await postJson("/api/control/end_race");
-                    log("Sent: end_race");
+                    log("Sent: end_race (operator=" + getOperator() + ")");
                 } catch (err) {
-                    log(`ERROR: ${err.message}`);
+                    log("ERROR: " + err.message);
+                }
+            };
+
+            document.getElementById("pause-resume-race").onclick = async () => {
+                try {
+                    const cmd = isPaused ? "resume_race" : "pause_race";
+                    await postJson("/api/control/" + cmd);
+                    log("Sent: " + cmd + " (operator=" + getOperator() + ")");
+                } catch (err) {
+                    log("ERROR: " + err.message);
                 }
             };
 
             document.getElementById("reset-race").onclick = async () => {
                 try {
                     await postJson("/api/control/reset_race");
-                    log("Sent: reset_race");
+                    log("Sent: reset_race (operator=" + getOperator() + ")");
                 } catch (err) {
-                    log(`ERROR: ${err.message}`);
+                    log("ERROR: " + err.message);
                 }
             };
 
             function populateRacerSelects(contestants) {
                 const options = contestants.map(
                     (c) =>
-                        `<option value="${c.transmitter_id}">${c.name} (ID ${c.transmitter_id})</option>`,
+                        '<option value="' + c.transmitter_id + '">' + escapeHtml(c.name) + " (ID " + c.transmitter_id + ")</option>",
                 );
-                const placeholder = `<option value="">— Select racer —</option>`;
+                const placeholder = '<option value="">— Select racer —</option>';
                 const html = placeholder + options.join("");
                 document.getElementById("penalty-racer").innerHTML = html;
                 document.getElementById("remove-lap-racer").innerHTML = html;
@@ -387,10 +680,15 @@
                     const res = await fetch("/api/config");
                     const data = await res.json();
                     const contestants = data.contestants || [];
+                    currentRacers = contestants;
+                    racerLookup = {};
+                    for (const c of contestants) {
+                        racerLookup[c.transmitter_id] = c.name;
+                    }
                     populateRacerSelects(contestants);
-                    log(`Loaded ${contestants.length} racer(s)`);
+                    log("Loaded " + contestants.length + " racer(s)");
                 } catch (err) {
-                    log(`ERROR: Failed to load racers — ${err.message}`);
+                    log("ERROR: Failed to load racers — " + err.message);
                 }
             }
 
@@ -417,10 +715,10 @@
                         reason,
                     });
                     log(
-                        `Sent: add_penalty racer=${racerId} seconds=${penaltySeconds}`,
+                        "Sent: add_penalty racer=" + racerId + " seconds=" + penaltySeconds,
                     );
                 } catch (err) {
-                    log(`ERROR: ${err.message}`);
+                    log("ERROR: " + err.message);
                 }
             };
 
@@ -443,10 +741,10 @@
                     }
                     await postJson("/api/control/remove_lap", payload);
                     log(
-                        `Sent: remove_lap racer=${racerId} lap=${payload.lap_number || "latest"}`,
+                        "Sent: remove_lap racer=" + racerId + " lap=" + (payload.lap_number || "latest"),
                     );
                 } catch (err) {
-                    log(`ERROR: ${err.message}`);
+                    log("ERROR: " + err.message);
                 }
             };
 
@@ -461,15 +759,13 @@
                         racer_id: racerId,
                         reason,
                     });
-                    log(`Sent: disqualify_racer racer=${racerId}`);
+                    log("Sent: disqualify_racer racer=" + racerId);
                 } catch (err) {
-                    log(`ERROR: ${err.message}`);
+                    log("ERROR: " + err.message);
                 }
             };
 
             document.getElementById("load-audit").onclick = loadAudit;
-
-            document.getElementById("hide-status").addEventListener("change", renderEvents);
 
             document.getElementById("soundStyleSelect").value = FranklinAudio.getStyle();
 
@@ -503,15 +799,19 @@
                 const commandId = target.dataset.commandId;
                 try {
                     await copyToClipboard(commandId);
-                    log(`Copied command_id: ${commandId}`);
+                    log("Copied command_id: " + commandId);
                 } catch (err) {
-                    log(`ERROR: ${err.message}`);
+                    log("ERROR: " + err.message);
                 }
             });
 
+            /* ---- Clock tick interval ---- */
+            clockInterval = setInterval(advanceClock, 50);
+
+            /* ---- WebSocket ---- */
             const wsProto =
                 window.location.protocol === "https:" ? "wss" : "ws";
-            const ws = new WebSocket(`${wsProto}://${window.location.host}/ws`);
+            const ws = new WebSocket(wsProto + "://" + window.location.host + "/ws");
             ws.onopen = () => log("WebSocket connected");
 
             ws.onmessage = (evt) => {
@@ -519,7 +819,13 @@
                     const msg = JSON.parse(evt.data);
 
                     if (msg.snapshot_seq !== undefined) {
-                        log(`RACE STATE: ${String(msg.state || "unknown").toUpperCase()}`, msg);
+                        msg._receivedAt = Date.now();
+                        currentSnapshot = msg;
+                        updateRaceBar(msg);
+                        renderLeaderboard(msg);
+                        if (debugVisible) {
+                            log("RACE STATE: " + String(msg.state || "unknown").toUpperCase(), msg);
+                        }
                         return;
                     }
                     if (msg.type === "countdown_phase") {
@@ -528,7 +834,7 @@
                             ? new Date(at * 1000).toLocaleTimeString()
                             : "n/a";
                         log(
-                            `COUNTDOWN ${String(msg.phase || "").toUpperCase()} at ${when}`,
+                            "COUNTDOWN " + String(msg.phase || "").toUpperCase() + " at " + when,
                             msg,
                         );
 
@@ -540,8 +846,10 @@
                             countdownActive = true;
                             countdownReadyAt = atEpoch;
                             countdownReadyAtMs = Date.now();
+                            setStartLights("not_started", "ready");
                             FranklinAudio.playReady();
                         } else if (phase === "set" && countdownActive) {
+                            setStartLights("not_started", "set");
                             const totalMs = (atEpoch - countdownReadyAt) * 1000;
                             const elapsedMs = Date.now() - countdownReadyAtMs;
                             const remainingMs = Math.max(0, totalMs - elapsedMs);
@@ -551,6 +859,7 @@
                                 }
                             }, remainingMs));
                         } else if (phase === "go" && countdownActive) {
+                            setStartLights("running", "go");
                             const totalMs = (atEpoch - countdownReadyAt) * 1000;
                             const elapsedMs = Date.now() - countdownReadyAtMs;
                             const remainingMs = Math.max(0, totalMs - elapsedMs);
@@ -567,7 +876,7 @@
                             ? new Date(at * 1000).toLocaleTimeString()
                             : "n/a";
                         log(
-                            `START_RACE scheduled at ${when}${msg.simulated ? " [SIM]" : ""}`,
+                            "START_RACE scheduled at " + when + (msg.simulated ? " [SIM]" : ""),
                             msg,
                         );
                     } else if (msg.type === "status") {

@@ -139,6 +139,10 @@ class LapDatabase:
             cursor.execute(
                 "ALTER TABLE race_control_actions ADD COLUMN command_id TEXT"
             )
+        if "operator" not in existing_columns:
+            cursor.execute(
+                "ALTER TABLE race_control_actions ADD COLUMN operator TEXT"
+            )
 
         # Backfill epoch columns from historical text/relative columns where possible.
         cursor.execute(
@@ -390,6 +394,7 @@ class LapDatabase:
         accepted: bool,
         payload: dict[str, Any],
         race_id: int | None = None,
+        operator: str | None = None,
     ) -> int:
         """Persist one race-control action audit row and return its ID."""
         assert self.conn is not None
@@ -409,10 +414,11 @@ class LapDatabase:
                 reason,
                 message,
                 source,
+                operator,
                 payload_json,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 race_id,
@@ -425,6 +431,7 @@ class LapDatabase:
                 payload.get("reason"),
                 payload.get("message"),
                 payload.get("source"),
+                operator,
                 json.dumps(payload, sort_keys=True),
                 datetime.now().isoformat(),
             ),
