@@ -113,12 +113,26 @@
         </style>
         <a id="dashLink" class="dash-link" href="#">← Dashboard</a>
         <script>document.getElementById('dashLink').href = `${location.protocol}//${location.hostname}:8085/dashboard`</script>
+
+        <div id="audioModal" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:999">
+            <div style="background:var(--surface);border:1px solid var(--surface-border);border-radius:12px;padding:24px;max-width:320px;text-align:center">
+                <p style="margin:0 0 12px;font-size:1.1rem">🔊 Audio is on</p>
+                <p style="margin:0 0 16px;color:var(--text);opacity:0.6;font-size:0.9rem">Race sounds enabled</p>
+                <button type="button" id="audioOkBtn" style="width:auto;min-width:100px;margin:0 auto">OK</button>
+            </div>
+        </div>
+
         <h1>Referee Control</h1>
 
         <div class="row">
             <button type="button" id="start-race">Start Race</button>
             <button type="button" id="end-race">End Race</button>
             <button type="button" id="reset-race">Reset Race</button>
+            <button type="button" id="soundBtn">Sound: on</button>
+            <select id="soundStyleSelect" style="width:auto;min-width:120px">
+                <option value="classic">Classic</option>
+                <option value="8bit">8-Bit</option>
+            </select>
         </div>
 
         <div class="row">
@@ -191,11 +205,16 @@
         </div>
         <div id="audit"></div>
 
+        <script src="/static/audio.js"></script>
         <script>
             const eventsEl = document.getElementById("events");
             const auditEl = document.getElementById("audit");
 
             const allEntries = [];
+            const countdownTimers = [];
+            let countdownActive = false;
+            let countdownReadyAt = 0;
+            let countdownReadyAtMs = 0;
 
             function log(line, msg) {
                 allEntries.push({ line, msg: msg || null, ts: new Date().toLocaleTimeString() });
@@ -452,6 +471,30 @@
 
             document.getElementById("hide-status").addEventListener("change", renderEvents);
 
+            document.getElementById("soundStyleSelect").value = FranklinAudio.getStyle();
+
+            document.getElementById("soundBtn").addEventListener("click", async () => {
+                const nowEnabled = !FranklinAudio.getEnabled();
+                FranklinAudio.setEnabled(nowEnabled);
+                if (nowEnabled) {
+                    await FranklinAudio.init();
+                    document.getElementById("soundBtn").textContent = "Sound: on";
+                    FranklinAudio.beep(440, 120);
+                } else {
+                    document.getElementById("soundBtn").textContent = "Sound: off";
+                }
+            });
+
+            document.getElementById("soundStyleSelect").addEventListener("change", () => {
+                FranklinAudio.setStyle(document.getElementById("soundStyleSelect").value);
+            });
+
+            document.getElementById("audioOkBtn").addEventListener("click", async () => {
+                await FranklinAudio.init();
+                document.getElementById("audioModal").remove();
+                FranklinAudio.beep(440, 120);
+            });
+
             auditEl.addEventListener("click", async (evt) => {
                 const target = evt.target;
                 if (!(target instanceof HTMLElement)) return;
@@ -488,6 +531,36 @@
                             `COUNTDOWN ${String(msg.phase || "").toUpperCase()} at ${when}`,
                             msg,
                         );
+
+                        const phase = String(msg.phase || "").toLowerCase();
+                        const atEpoch = Number.isFinite(at) ? at : 0;
+                        if (phase === "ready" && !countdownActive) {
+                            for (const t of countdownTimers) clearTimeout(t);
+                            countdownTimers.length = 0;
+                            countdownActive = true;
+                            countdownReadyAt = atEpoch;
+                            countdownReadyAtMs = Date.now();
+                            FranklinAudio.playReady();
+                        } else if (phase === "set" && countdownActive) {
+                            const totalMs = (atEpoch - countdownReadyAt) * 1000;
+                            const elapsedMs = Date.now() - countdownReadyAtMs;
+                            const remainingMs = Math.max(0, totalMs - elapsedMs);
+                            countdownTimers.push(setTimeout(() => {
+                                if (countdownActive) {
+                                    FranklinAudio.playSet();
+                                }
+                            }, remainingMs));
+                        } else if (phase === "go" && countdownActive) {
+                            const totalMs = (atEpoch - countdownReadyAt) * 1000;
+                            const elapsedMs = Date.now() - countdownReadyAtMs;
+                            const remainingMs = Math.max(0, totalMs - elapsedMs);
+                            countdownTimers.push(setTimeout(() => {
+                                if (countdownActive) {
+                                    FranklinAudio.playGo();
+                                    countdownActive = false;
+                                }
+                            }, remainingMs));
+                        }
                     } else if (msg.type === "start_race") {
                         const at = Number(msg.at);
                         const when = Number.isFinite(at)
@@ -497,6 +570,24 @@
                             `START_RACE scheduled at ${when}${msg.simulated ? " [SIM]" : ""}`,
                             msg,
                         );
+                    } else if (msg.type === "status") {
+                        const txt = String(msg.message || "").toLowerCase();
+                        if (txt.includes("end") || txt.includes("reset")) {
+                            FranklinAudio.playFinish();
+                            for (const t of countdownTimers) clearTimeout(t);
+                            countdownTimers.length = 0;
+                            countdownActive = false;
+                        }
+                        log(JSON.stringify(msg), msg);
+                    } else if (msg.type === "race_control") {
+                        const cmd = String(msg.command || "");
+                        if ((cmd === "end_race" || cmd === "reset_race") && msg.accepted) {
+                            FranklinAudio.playFinish();
+                            for (const t of countdownTimers) clearTimeout(t);
+                            countdownTimers.length = 0;
+                            countdownActive = false;
+                        }
+                        log(JSON.stringify(msg), msg);
                     } else {
                         log(JSON.stringify(msg), msg);
                     }
