@@ -24,7 +24,7 @@ import redis.asyncio as redis
 from aiohttp import web  # type: ignore[import-untyped]
 
 # Redis contract reference: docs/redis-message-reference.md
-REDIS_SOCKET_PATH = "./redis.sock"
+REDIS_SOCKET_PATH = os.environ.get("FRANKLIN_REDIS_SOCKET", "./redis.sock")
 REDIS_OUT_CHANNEL = "hardware:out"
 WEB_PORT = 8082
 WEB_HOST = "0.0.0.0"
@@ -307,8 +307,10 @@ class HealthCheckWebAppServer:
         }
 
     async def _check_hardware_redis_log_tail(self) -> dict[str, Any]:
-        tail = await asyncio.to_thread(self._tail_file, Path("hardware_redis.log"), 20)
-        return {"ok": True, "tail": tail}
+        result = await self._run_command_async(
+            ["journalctl", "-u", "franklin-hardware-monitor", "--no-pager", "-n", "20"]
+        )
+        return {"ok": result["returncode"] == 0, "tail": result["stdout"][:2000]}
 
     async def _check_caddy_service(self) -> dict[str, Any]:
         return await self._run_command_async(

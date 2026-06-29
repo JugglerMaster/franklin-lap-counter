@@ -22,7 +22,7 @@ from database import LapDatabase
 
 # Redis contract reference: docs/redis-message-reference.md
 # Configuration
-REDIS_SOCKET_PATH = "./redis.sock"
+REDIS_SOCKET_PATH = os.environ.get("FRANKLIN_REDIS_SOCKET", "./redis.sock")
 REDIS_OUT_CHANNEL = "hardware:out"
 REDIS_EVENTS_CHANNEL = "franklin:events"
 RACE_STATE_CHANNEL = "franklin:race_state"

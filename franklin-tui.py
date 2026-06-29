@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -246,7 +247,7 @@ class Franklin(App[Any]):  # type: ignore[type-arg]
         race_end_mode: RaceEndMode,
         last_race_contestant_ids: list[int],
         racer_color_assignments: dict[int, RacerColorScheme],
-        redis_socket: str = "./redis.sock",
+        redis_socket: str | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -288,7 +289,7 @@ class Franklin(App[Any]):  # type: ignore[type-arg]
         logging.info(f"Franklin initialized: {self.race_mode}")
 
         # Redis communication setup (see docs/redis-message-reference.md)
-        self.redis_socket = redis_socket
+        self.redis_socket = redis_socket or os.environ.get("FRANKLIN_REDIS_SOCKET", "./redis.sock")
         self.redis_in_channel = "hardware:in"
         self.redis_out_channel = "hardware:out"
         self.redis_events_channel = "franklin:events"
@@ -1020,4 +1021,5 @@ if __name__ == "__main__":
         last_race_contestant_ids=last_race_contestant_ids,
         racer_color_assignments=racer_color_assignments,
     )
+
     app.run()

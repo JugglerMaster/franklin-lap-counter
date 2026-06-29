@@ -1908,54 +1908,6 @@
         }
       }
     },
-    "tmuxinator@latest": {
-      "last_modified": "2026-05-21T08:15:18Z",
-      "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#tmuxinator",
-      "source": "devbox-search",
-      "version": "3.3.7",
-      "systems": {
-        "aarch64-darwin": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/4vl9rg86rphgrr3n04wg6rnb806iyi4f-tmuxinator-3.3.7",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/4vl9rg86rphgrr3n04wg6rnb806iyi4f-tmuxinator-3.3.7"
-        },
-        "aarch64-linux": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/30jywx125p985d5w7bndcqglarm4iy43-tmuxinator-3.3.7",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/30jywx125p985d5w7bndcqglarm4iy43-tmuxinator-3.3.7"
-        },
-        "x86_64-darwin": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/cp9r8hkp82gpsvg3k3ma94vbvk5ndc6q-tmuxinator-3.3.7",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/cp9r8hkp82gpsvg3k3ma94vbvk5ndc6q-tmuxinator-3.3.7"
-        },
-        "x86_64-linux": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/7h2vcb9nhxyxplavjv03fx62fa2vgfhx-tmuxinator-3.3.7",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/7h2vcb9nhxyxplavjv03fx62fa2vgfhx-tmuxinator-3.3.7"
-        }
-      }
-    },
     "watchexec@latest": {
       "last_modified": "2026-05-21T08:15:18Z",
       "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#watchexec",

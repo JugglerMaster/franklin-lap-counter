@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -190,7 +191,7 @@ def write_config(
 
         import redis
 
-        r = redis.Redis(unix_socket_path="./redis.sock", decode_responses=True)
+        r = redis.Redis(unix_socket_path=os.environ.get("FRANKLIN_REDIS_SOCKET", "./redis.sock"), decode_responses=True)
         message = {
             "type": "preferences_changed",
             "recorded_at": time.time(),

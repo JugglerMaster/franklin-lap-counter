@@ -20,6 +20,7 @@ Redis channels/messages and the snapshot schema.
 import argparse
 import json
 import logging
+import os
 import queue
 import socket
 import subprocess
@@ -72,7 +73,7 @@ class FranklinGuiApp(Gtk.Application):
         race_end_mode: RaceEndMode,
         last_race_contestant_ids: list[int],
         racer_color_assignments: dict[int, RacerColorScheme],
-        redis_socket: str = "./redis.sock",
+        redis_socket: str | None = None,
     ) -> None:
         super().__init__(application_id="com.franklin.lapcounter.gui")
 
@@ -106,7 +107,7 @@ class FranklinGuiApp(Gtk.Application):
         self._ensure_racer_color_assignments(known_racer_ids, persist=False)
 
         # Redis contract reference: docs/redis-message-reference.md
-        self.redis_socket = redis_socket
+        self.redis_socket = redis_socket or os.environ.get("FRANKLIN_REDIS_SOCKET", "./redis.sock")
         self.redis_in_channel = "hardware:in"
         self.redis_out_channel = "hardware:out"
         self.redis_events_channel = "franklin:events"

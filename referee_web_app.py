@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,7 @@ from database import LapDatabase
 from redis_commands import build_command_envelope, parse_command_envelope
 
 # Redis contract reference: docs/redis-message-reference.md
-REDIS_SOCKET_PATH = "./redis.sock"
+REDIS_SOCKET_PATH = os.environ.get("FRANKLIN_REDIS_SOCKET", "./redis.sock")
 REDIS_IN_CHANNEL = "hardware:in"
 REDIS_OUT_CHANNEL = "hardware:out"
 REDIS_EVENTS_CHANNEL = "franklin:events"

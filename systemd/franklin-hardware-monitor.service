@@ -1,0 +1,28 @@
+[Unit]
+Description=Franklin hardware monitor (serial -> Redis bridge)
+Documentation=https://github.com/jachinrupe/franklin-lap-counter
+After=franklin-redis.service
+Requires=franklin-redis.service
+
+[Service]
+Type=simple
+User=franklin
+Group=franklin
+SupplementaryGroups=dialout
+WorkingDirectory=/opt/franklin-lap-counter
+Environment=FRANKLIN_REDIS_SOCKET=/opt/franklin-lap-counter/run/redis.sock
+ExecStart=/opt/franklin-lap-counter/bin/franklin-hardware-monitor
+Restart=always
+RestartSec=3
+
+# Logging
+StandardOutput=append:/var/log/franklin/franklin-hardware-monitor.log
+StandardError=inherit
+
+# Sandboxing
+PrivateTmp=yes
+ProtectSystem=full
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

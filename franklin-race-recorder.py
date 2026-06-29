@@ -78,7 +78,7 @@ class RaceRecorder:
         self.persist = persist
         self.redis = redis.Redis(unix_socket_path=redis_socket, decode_responses=True)
         self.db = LapDatabase(db_path)
-        self.engine = RaceEngine(self.db, auto_resume=True, persist=persist)
+        self.engine = RaceEngine(self.db, auto_resume=persist, persist=persist)
 
         self._snapshot_seq = 0
         # Identifies this recorder run so clients can tell a restart apart from
@@ -504,8 +504,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--redis-socket",
-        default="./redis.sock",
-        help="Path to the Redis unix socket (default: ./redis.sock)",
+        default=os.environ.get("FRANKLIN_REDIS_SOCKET", "./redis.sock"),
+        help="Path to the Redis unix socket (default: FRANKLIN_REDIS_SOCKET env or ./redis.sock)",
     )
     parser.add_argument(
         "--db",
