@@ -42,7 +42,7 @@ from database import LapDatabase
 from race.race import generate_fake_race, order_laps_by_occurrence
 from race.race_engine import RaceEngine
 from race.race_mode import RaceMode
-from race.race_state import RaceEndMode, is_race_going_state
+from race.race_state import RaceEndMode, RaceState, is_race_going_state
 from redis_commands import build_command_envelope
 
 HARDWARE_IN_CHANNEL = "hardware:in"
@@ -159,7 +159,9 @@ class RaceRecorder:
                 if now - last_tick >= SNAPSHOT_TICK_SECONDS:
                     # Refresh the retained snapshot so late joiners see a current
                     # clock even though live clients advance elapsed locally.
-                    if is_race_going_state(self.engine.race.state):
+                    # Publish for all active states (running, paused, finished)
+                    # so that clients connecting mid-race get the correct state.
+                    if self.engine.race.state != RaceState.NOT_STARTED:
                         self._publish_snapshot()
                     last_tick = now
         finally:

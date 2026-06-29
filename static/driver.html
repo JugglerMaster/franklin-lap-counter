@@ -410,6 +410,11 @@
                     el.phaseText.textContent = "State: running";
                     return;
                 }
+                if (state.phase === "paused") {
+                    setLights(["yellow", "yellow", "yellow"]);
+                    el.phaseText.textContent = "State: paused";
+                    return;
+                }
 
                 setLights(["red", "red", "red"]);
                 el.phaseText.textContent = "State: waiting";
@@ -824,6 +829,8 @@
                             if (!state.countdownActive) {
                                 if (raceState === "running") {
                                     state.phase = "running";
+                                } else if (raceState === "paused") {
+                                    state.phase = "paused";
                                 } else {
                                     state.phase = "waiting";
                                 }
@@ -982,9 +989,11 @@
             });
 
             document.getElementById("audioOkBtn").addEventListener("click", async () => {
-                await FranklinAudio.init();
+                try {
+                    await FranklinAudio.init();
+                    FranklinAudio.beep(440, 120);
+                } catch (_) { /* audio not available */ }
                 document.getElementById("audioModal").remove();
-                FranklinAudio.beep(440, 120);
             });
 
             renderAll().catch((err) => {

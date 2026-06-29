@@ -57,7 +57,9 @@ class RefereeWebAppServer:
         self.websockets: set[web.WebSocketResponse] = set()
         self.db = LapDatabase("franklin.db")
         self._pending_operators: dict[str, str] = {}
+        self._latest_snapshot: dict[str, Any] | None = None
 
+        self.app.router.add_static("/static", STATIC_DIR, name="static")
         self.app.router.add_get("/", self.index_handler)
         self.app.router.add_get("/ws", self.websocket_handler)
         self.app.router.add_get("/api/health", self.health_handler)
@@ -118,6 +120,9 @@ class RefereeWebAppServer:
             }
         )
 
+        if self._latest_snapshot is not None:
+            await ws.send_json(self._latest_snapshot)
+
         try:
             async for _msg in ws:
                 pass
@@ -154,17 +159,29 @@ class RefereeWebAppServer:
         await self.redis_client.publish(REDIS_IN_CHANNEL, json.dumps(validated))
 
     async def start_race_handler(self, request: web.Request) -> web.Response:
+        if self.db.get_in_progress_race() is not None:
+            return web.json_response(
+                {"ok": False, "error": "A race is already in progress"},
+                status=409,
+            )
         base = time.time() + 0.25
         ready_at = base
         set_at = base + 1.0
         go_at = base + 2.0
-        payload = {
+        payload: dict[str, Any] = {
             "command": "start_race",
             "ready_at": ready_at,
             "set_at": set_at,
             "go_at": go_at,
             "start_at": go_at,
         }
+        body = await request.json() if request.body_exists else {}
+        race_mode = body.get("race_mode")
+        total_laps = body.get("total_laps")
+        if race_mode:
+            payload["race_mode"] = str(race_mode)
+        if total_laps is not None:
+            payload["total_laps"] = int(total_laps)
         await self._publish_command(payload)
         return web.json_response({"ok": True, "published": payload})
 
@@ -186,6 +203,14 @@ class RefereeWebAppServer:
 
     async def resume_race_handler(self, request: web.Request) -> web.Response:
         payload = {"command": "resume_race"}
+        await self._publish_command(payload)
+        return web.json_response({"ok": True, "published": payload})
+
+    async def reset_race_handler(self, request: web.Request) -> web.Response:
+        guard = self._require_race_in_progress()
+        if guard:
+            return guard
+        payload = {"command": "reset_race"}
         await self._publish_command(payload)
         return web.json_response({"ok": True, "published": payload})
 
@@ -389,6 +414,8 @@ class RefereeWebAppServer:
                         try:
                             parsed = json.loads(data)
                             if isinstance(parsed, dict):
+                                if parsed.get("snapshot_seq") is not None:
+                                    self._latest_snapshot = parsed
                                 if parsed.get("type") == "race_control":
                                     self._audit_race_control_event(parsed)
                                 await self.broadcast_to_websockets(parsed)

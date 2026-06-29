@@ -466,6 +466,7 @@
                 countdownReadyAt: 0,
                 countdownReadyAtMs: 0,
                 raceReady: false,
+                snapshotRaceState: null,
             };
 
             // DOM elements
@@ -561,8 +562,10 @@
                 console.log("Updating race info with data:", state.currentRace);
 
                 // Determine race state from status and times
-                let raceState = "not_started";
-                if (state.currentRace) {
+                // Use the authoritative snapshot state if available
+                // (the REST API doesn't expose paused state directly)
+                let raceState = state.snapshotRaceState || "not_started";
+                if (raceState === "not_started" && state.currentRace) {
                     if (
                         state.currentRace.status === "in_progress" ||
                         ((state.currentRace.start_at ||
@@ -1026,6 +1029,8 @@
                                 "Race snapshot received, state:",
                                 data.state,
                             );
+                            // Track the authoritative race state from the snapshot
+                            state.snapshotRaceState = data.state || null;
                             // Merge disqualification status from snapshot
                             state.disqualified = data.disqualified || [];
                             fetchRaceData().catch((err) => {

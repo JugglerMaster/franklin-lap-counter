@@ -56,6 +56,7 @@ class ScoreboardWebAppServer:
         self.redis_pubsub: Any | None = None
         self.websockets: set[web.WebSocketResponse] = set()
         self.db: LapDatabase = LapDatabase(db_path)
+        self._latest_snapshot: dict[str, Any] | None = None
 
         # Setup routes
         self.app.router.add_get("/ws", self.websocket_handler)
@@ -196,6 +197,10 @@ class ScoreboardWebAppServer:
         try:
             # Send initial connection confirmation
             await ws.send_json({"type": "connected", "message": "WebSocket connected"})
+
+            # Send latest snapshot so client immediately shows current state
+            if self._latest_snapshot is not None:
+                await ws.send_json(self._latest_snapshot)
 
             # Keep connection alive and handle incoming messages (if any)
             async for msg in ws:
@@ -349,6 +354,8 @@ class ScoreboardWebAppServer:
                 if message and message["type"] == "message":
                     try:
                         data = json.loads(message["data"])
+                        if data.get("snapshot_seq") is not None:
+                            self._latest_snapshot = data
                         logger.debug(
                             f"Broadcasting to {len(self.websockets)} clients: {data.get('type', 'unknown')}"
                         )

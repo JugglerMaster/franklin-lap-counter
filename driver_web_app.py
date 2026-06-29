@@ -60,7 +60,9 @@ class DriverWebAppServer:
         self.redis_pubsub: Any | None = None
         self.websockets: set[web.WebSocketResponse] = set()
         self.db = LapDatabase(db_path)
+        self._latest_snapshot: dict[str, Any] | None = None
 
+        self.app.router.add_static("/static", STATIC_DIR, name="static")
         self.app.router.add_get("/", self.index_handler)
         self.app.router.add_get("/ws", self.websocket_handler)
         self.app.router.add_get("/api/config", self.get_config)
@@ -83,6 +85,9 @@ class DriverWebAppServer:
                 "message": "Driver WebSocket connected",
             }
         )
+
+        if self._latest_snapshot is not None:
+            await ws.send_json(self._latest_snapshot)
 
         try:
             async for _msg in ws:
@@ -509,6 +514,8 @@ class DriverWebAppServer:
                         try:
                             parsed = json.loads(data)
                             if isinstance(parsed, dict):
+                                if parsed.get("snapshot_seq") is not None:
+                                    self._latest_snapshot = parsed
                                 await self.broadcast_to_websockets(parsed)
                         except json.JSONDecodeError:
                             logger.error("Invalid JSON from Redis: %s", data)
