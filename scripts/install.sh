@@ -167,9 +167,13 @@ info "Architecture: $ARCH"
 case "$ARCH" in
     aarch64|arm64) DEB_ARCH="arm64" ;;
     x86_64|amd64)  DEB_ARCH="amd64" ;;
-    armv7l|armhf)  DEB_ARCH="armhf" ;;
     *)             DEB_ARCH="$ARCH" ;;
 esac
+
+# Only aarch64 is supported for the hardware monitor (lnav requires 64-bit)
+if [[ "$DEB_ARCH" == "armhf" ]]; then
+    die "Franklin requires a 64-bit Raspberry Pi. Detected $ARCH but only arm64/amd64 are supported."
+fi
 
 # ── are we updating or installing fresh? ─────────────────────────────────
 

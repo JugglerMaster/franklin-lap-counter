@@ -12,7 +12,7 @@ These playbooks provide modular, idempotent infrastructure/setup and deployment 
 - `40-redis.yml` - enable/start `redis-server`
 - `45-network-hotspot.yml` - configure Pi hotspot/router stack (`hostapd`, `dnsmasq`, `nftables`, static `wlan0`, IPv4 forwarding)
 - `50-startup-script.yml` - copy startup scripts and tmuxinator project configs to target dir
-- `55-autologin-startup.yml` - configure boot autologin (`tty1`) and login-shell Franklin autostart logic
+- `55-autologin-startup.yml` - configure boot autologin (`tty1`) and login-shell Franklin autostart (TUI via tmux)
 - `56-wayland-sway.yml` - configure sway (Wayland) session to auto-start Franklin GUI stack
 - `57-hdmi-hotplug.yml` - ensure `hdmi_force_hotplug=1` in firmware config for monitor detection reliability
 - `58-wayvnc.yml` - install/configure WayVNC for SSH-tunneled remote GUI access
@@ -22,7 +22,8 @@ These playbooks provide modular, idempotent infrastructure/setup and deployment 
 - `63-reboot.yml` - reboot target host and wait for reconnect
 - `64-reset-database.yml` - stop Franklin tmux sessions and remove the SQLite database so it is recreated empty
 - `site.yml` - runs setup playbooks in order
-- `deploy-franklin.yml` - deploy app artifacts (`franklin-hardware-monitor`, Python apps, static/, tmuxinator/, etc.)
+- `deploy-franklin.yml` - deploy app artifacts (`franklin-hardware-monitor`, Python apps, static/, tmuxinator/, systemd/ configs)
+- `update-franklin.yml` - build + deploy update: auto-detects Pi arch, builds `.deb`, rsyncs files, updates pip deps, restarts services
 
 ## Files
 
@@ -56,6 +57,14 @@ Deploy Franklin artifacts:
 
 ```bash
 ansible-playbook -i playbooks/inventory.ini playbooks/deploy-franklin.yml
+```
+
+Update a Pi (build + deploy in one step, arch auto-detected):
+
+```bash
+ansible-playbook -i playbooks/inventory.ini playbooks/update-franklin.yml
+# Or via devbox:
+devbox run update:franklin
 ```
 
 Override host/user/destination directory at runtime:

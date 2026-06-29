@@ -61,6 +61,43 @@ devbox run ansible:health-check
 
 ---
 
+### Updating Franklin on a Pi
+
+For routine updates (new version, bug fixes), use the single-command update workflow. It auto-detects your Pi's architecture, builds the correct binary, and deploys everything in one step:
+
+```bash
+# Update one Pi (architecture is auto-detected via SSH)
+devbox run update:franklin
+```
+
+This playbook does the following per host:
+1. Detects the Pi's architecture (`dpkg --print-architecture`)
+2. Builds `franklin-hardware-monitor` for that arch locally
+3. Installs the `.deb` package on the Pi
+4. Rsyncs Python source files (same approach as `deploy-franklin.yml`)
+5. Updates Franklin's pip dependencies (`textual`, `redis`, `aiohttp`, `pygments`, `rich`)
+6. Restarts all Franklin services via `franklin.target`
+
+If you have multiple Pies in your inventory, the playbook processes each host independently — a build failure on one does not stop updates to others.
+
+#### Inventory setup
+
+Copy the example and edit it with your Pi's details:
+
+```bash
+cp playbooks/inventory.example.ini playbooks/inventory.ini
+# Edit playbooks/inventory.ini with your Pi hostname/IP
+```
+
+Example `playbooks/inventory.ini`:
+
+```ini
+[pi]
+franklin-pi ansible_user=franklin ansible_host=10.27.1.64
+```
+
+---
+
 ### Method B: Full tmux Stack Startup (Local or Remote)
 
 You can launch the entire system (including background services) inside a pre-configured tmux session using `tmuxinator`.
@@ -129,7 +166,7 @@ python franklin-tui.py --fake
 python franklin-gui.py --fake
 ```
 
-You can also launch the full stack (recorder + web apps + renderer) in a single tmux session:
+You can also launch the full stack (redis + hardware simulator + recorder + web apps + TUI) in a single tmux session for local development:
 ```bash
 devbox run start:franklin-simulator
 ```

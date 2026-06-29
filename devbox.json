@@ -128,6 +128,9 @@
       ],
       "ansible:health-check": [
         "ansible-playbook -i playbooks/inventory.ini playbooks/61-health-check.yml"
+      ],
+      "update:franklin": [
+        "ansible-playbook -i playbooks/inventory.ini playbooks/update-franklin.yml"
       ]
     }
   }

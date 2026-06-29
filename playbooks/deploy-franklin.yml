@@ -113,6 +113,7 @@
         - { key: "static", path: "{{ project_root }}/static" }
         - { key: "race", path: "{{ project_root }}/race" }
         - { key: "tmuxinator", path: "{{ project_root }}/tmuxinator" }
+        - { key: "systemd", path: "{{ project_root }}/systemd" }
 
   tasks:
     - name: Ensure destination directory exists
@@ -248,6 +249,34 @@
           - "--chown={{ franklin_user }}:{{ franklin_group }}"
       become: false
       when: (optional_dir_stats.results | selectattr('item.key', 'equalto', 'tmuxinator') | map(attribute='stat.isdir') | first | default(false))
+
+    # Deploy systemd service files for background services (redis, hardware
+    # monitor, race recorder, web apps). These are installed to
+    # /etc/systemd/system/ and managed by systemd.
+    - name: Deploy systemd service files
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/etc/systemd/system/{{ item | basename }}"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      loop:
+        - "{{ project_root }}/systemd/franklin-driver.service"
+        - "{{ project_root }}/systemd/franklin-hardware-monitor.service"
+        - "{{ project_root }}/systemd/franklin-healthcheck.service"
+        - "{{ project_root }}/systemd/franklin-race-recorder.service"
+        - "{{ project_root }}/systemd/franklin-referee.service"
+        - "{{ project_root }}/systemd/franklin-scoreboard.service"
+        - "{{ project_root }}/systemd/franklin.target"
+      register: systemd_deploy
+      when: (optional_dir_stats.results | selectattr('item.key', 'equalto', 'systemd') | map(attribute='stat.isdir') | first | default(false))
+
+    - name: Reload systemd daemon after deploying service files
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when:
+        - (optional_dir_stats.results | selectattr('item.key', 'equalto', 'systemd') | map(attribute='stat.isdir') | first | default(false))
+        - systemd_deploy is changed
 
     - name: Verify required files on remote host
       ansible.builtin.stat:
