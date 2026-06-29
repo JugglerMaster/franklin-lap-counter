@@ -164,6 +164,11 @@ class RaceEngine:
             return EngineResult(changed=False, note="not_running")
         self._paused_at_epoch = time.time()
         self.race.state = RaceState.PAUSED
+        if self.current_race_id is not None and self.persist:
+            try:
+                self.db.update_race_state(self.current_race_id, "paused")
+            except Exception as exc:
+                logging.error("Failed to persist pause state: %s", exc)
         return EngineResult(changed=True, note="paused")
 
     def resume_race(self) -> EngineResult:
@@ -171,9 +176,15 @@ class RaceEngine:
             return EngineResult(changed=False, note="not_paused")
         if self._paused_at_epoch is not None:
             pause_duration = time.time() - self._paused_at_epoch
+            assert self._start_at_epoch is not None
             self._start_at_epoch += pause_duration
             self._paused_at_epoch = None
         self.race.state = RaceState.RUNNING
+        if self.current_race_id is not None and self.persist:
+            try:
+                self.db.update_race_state(self.current_race_id, "running")
+            except Exception as exc:
+                logging.error("Failed to persist resume state: %s", exc)
         return EngineResult(changed=True, note="resumed")
 
     def reset(self) -> EngineResult:
@@ -205,7 +216,11 @@ class RaceEngine:
         self._paused_at_epoch = None
         if self.current_race_id is not None and self.persist:
             try:
-                self.db.end_race(self.current_race_id, end_at=self._end_at_epoch)
+                self.db.end_race(
+                    self.current_race_id,
+                    end_at=self._end_at_epoch,
+                    state=self.race.state.name.lower(),
+                )
             except Exception as exc:  # pragma: no cover - defensive
                 logging.error("Failed to mark race finished: %s", exc)
         # current_race_id is intentionally retained so views can keep showing
@@ -434,17 +449,27 @@ class RaceEngine:
         race.active_contestants = {
             lap.racer_id for lap in restored_laps if lap.lap_number > 0
         }
-        race.state = RaceState.RUNNING
 
+        # Restore the race state persisted by the previous recorder run.
+        persisted_state = race_row.get("state")
         if isinstance(race_start_epoch, (int, float)) and race_start_epoch > 0:
-            self._start_at_epoch = float(race_start_epoch)
-            elapsed = max(0.0, time.time() - self._start_at_epoch)
+            start_at = float(race_start_epoch)
+            # If the race was paused before the recorder crashed, try to
+            # restore the pause anchor (only available when the recorder was
+            # still alive at pause time).
+            if persisted_state == "paused" and self._paused_at_epoch is not None:
+                pause_duration = time.time() - self._paused_at_epoch
+                start_at += pause_duration
+            elapsed = max(0.0, time.time() - start_at)
             race.start_time = time.monotonic() - elapsed
             race.elapsed_time = elapsed
+            self._start_at_epoch = start_at
         else:
             self._start_at_epoch = None
             race.start_time = time.monotonic()
             race.elapsed_time = 0.0
+
+        race.state = RaceState.RUNNING
 
         self.race = race
         self._end_at_epoch = None
