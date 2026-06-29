@@ -149,6 +149,7 @@ class FranklinGuiApp(Gtk.Application):
         self.leaderboard_scroll: Gtk.ScrolledWindow | None = None
         self._initial_scale: float = 1.0
         self.events_view: Gtk.TextView | None = None
+        self.events_lap_box: Gtk.Box | None = None
         self.panes: Gtk.Paned | None = None
         self.events_box: Gtk.Box | None = None
         self._events_visible = False
@@ -271,6 +272,7 @@ class FranklinGuiApp(Gtk.Application):
             ("start_race", self._action_start_race),
             ("end_race", self._action_end_race),
             ("reset_race", self._action_reset_race),
+            ("pause_resume", self._action_pause_resume),
             ("toggle_mode", self._action_toggle_mode),
             ("toggle_event_log", self._action_toggle_event_log),
             ("manage_drivers", self._action_manage_drivers),
@@ -326,6 +328,15 @@ class FranklinGuiApp(Gtk.Application):
 
     def _action_reset_race(self, _action: Gio.SimpleAction, _param: Any) -> None:
         self.on_reset_clicked(None)
+
+    def _action_pause_resume(self, _action: Gio.SimpleAction, _param: Any) -> None:
+        if self.snapshot.state == "running":
+            self.publish_command("pause_race")
+            self.append_event("Requested race pause")
+        elif self.snapshot.state == "paused":
+            self.publish_command("resume_race")
+            self.append_event("Requested race resume")
+        self.refresh_views()
 
     def _action_toggle_mode(self, _action: Gio.SimpleAction, _param: Any) -> None:
         if self.snapshot.is_going:
@@ -461,16 +472,19 @@ class FranklinGuiApp(Gtk.Application):
             )
 
         events_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        events_box.append(Gtk.Label(label="Events"))
-        events_view = Gtk.TextView()
-        events_view.set_editable(False)
-        events_view.set_monospace(True)
-        self.events_view = events_view
+        events_label = Gtk.Label(label="Lap Events")
+        events_label.add_css_class("leaderboard-title")
+        events_box.append(events_label)
+
+        events_lap_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        events_lap_box.set_hexpand(True)
+        events_lap_box.set_vexpand(True)
+        self.events_lap_box = events_lap_box
 
         events_scroll = Gtk.ScrolledWindow()
         events_scroll.set_vexpand(True)
         events_scroll.set_hexpand(True)
-        events_scroll.set_child(events_view)
+        events_scroll.set_child(events_lap_box)
         events_box.append(events_scroll)
         self.events_box = events_box
 
@@ -1391,6 +1405,34 @@ class FranklinGuiApp(Gtk.Application):
                     cell_label.set_size_request(status_col_width_px, -1)
                 self.leaderboard_grid.attach(cell_label, col, row_index, 1, 1)
 
+    def _render_lap_events(self) -> None:
+        if not self.events_lap_box:
+            return
+
+        child = self.events_lap_box.get_first_child()
+        while child is not None:
+            next_child = child.get_next_sibling()
+            self.events_lap_box.remove(child)
+            child = next_child
+
+        for lap in self.snapshot.laps:
+            display_name = self.global_contestants.get_contestant_name(lap.racer_id)
+            if lap.lap_number == 0:
+                text = (
+                    f"Racer {display_name} START TRIGGER | "
+                    f"Time: {self._format_time_cs(lap.race_time)}"
+                )
+            else:
+                text = (
+                    f"Racer {display_name} Lap {lap.lap_number} | "
+                    f"Race Time: {self._format_time_cs(lap.race_time)}, "
+                    f"Lap Time: {self._format_time_cs(lap.lap_time)}"
+                )
+            label = Gtk.Label(label=text)
+            label.set_xalign(0)
+            label.set_hexpand(False)
+            self.events_lap_box.append(label)
+
     def refresh_views(self) -> None:
         self._sync_start_lights_with_race_state()
         self._sync_controls_with_race_state()
@@ -1430,6 +1472,7 @@ class FranklinGuiApp(Gtk.Application):
                 self.laps_remaining_label.set_text(f"Laps Remaining: {laps_remaining}")
 
         self._render_leaderboard_grid()
+        self._render_lap_events()
 
     def update_time(self) -> bool:
         self._update_start_light_size()
@@ -1561,6 +1604,7 @@ class FranklinGuiApp(Gtk.Application):
             ("?", "Show keyboard shortcuts"),
             ("Ctrl+S", "Start race"),
             ("Ctrl+E", "End race"),
+            ("Ctrl+P", "Pause/Resume race"),
             ("Ctrl+Shift+R", "Reset race"),
             ("Ctrl+T", "Toggle race mode"),
             ("Ctrl+L", "Toggle event log"),
@@ -1638,6 +1682,9 @@ class FranklinGuiApp(Gtk.Application):
             return True
         if keyval == Gdk.KEY_comma and not shift:
             self.on_preferences_clicked(None)
+            return True
+        if keyval in (Gdk.KEY_p, Gdk.KEY_P) and not shift:
+            self._action_pause_resume(None, None)
             return True
         return False
 

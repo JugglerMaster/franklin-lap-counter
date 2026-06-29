@@ -2,9 +2,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
-import queue
-import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -238,8 +235,6 @@ class Franklin(App[Any]):  # type: ignore[type-arg]
         Binding("s", "start_race", "Start Race"),
         Binding("e", "end_race", "End Race"),
         Binding("r", "rename_driver", "Rename Driver"),
-        Binding("q", "quit", "Quit"),
-        Binding("escape", "quit", "Quit"),
     ]
 
     def __init__(
@@ -251,7 +246,7 @@ class Franklin(App[Any]):  # type: ignore[type-arg]
         race_end_mode: RaceEndMode,
         last_race_contestant_ids: list[int],
         racer_color_assignments: dict[int, RacerColorScheme],
-        redis_socket: str | None = None,
+        redis_socket: str = "./redis.sock",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -293,7 +288,7 @@ class Franklin(App[Any]):  # type: ignore[type-arg]
         logging.info(f"Franklin initialized: {self.race_mode}")
 
         # Redis communication setup (see docs/redis-message-reference.md)
-        self.redis_socket = redis_socket or os.environ.get("FRANKLIN_REDIS_SOCKET", "./redis.sock")
+        self.redis_socket = redis_socket
         self.redis_in_channel = "hardware:in"
         self.redis_out_channel = "hardware:out"
         self.redis_events_channel = "franklin:events"
@@ -305,9 +300,6 @@ class Franklin(App[Any]):  # type: ignore[type-arg]
         self._recorder_present_cached: bool | None = None
         self._redis_client = None
         self._redis_pubsub = None
-        self._incoming_messages: queue.Queue[tuple[str, dict[str, Any]]] = queue.Queue()
-        self._quit_event = threading.Event()
-        self._redis_thread: threading.Thread | None = None
         self.config_path = Path("franklin.config.json")
         self.update_subtitle()
 
@@ -411,109 +403,101 @@ class Franklin(App[Any]):  # type: ignore[type-arg]
             )
         return rows
 
-    def _redis_reader(self) -> None:
-        """Dedicated thread: subscribe to Redis channels, push messages to queue.
-
-        Keeps synchronous ``get_message`` off the asyncio event loop so keyboard
-        input is never blocked by Redis I/O. Mirrors the pattern used by
-        ``franklin-gui.py`` (daemon thread + ``queue.Queue`` bridge).
+    async def hardware_monitor_task(self):
         """
-        client = None
-        pubsub = None
+        Subscribe to Redis pub/sub to receive hardware and race-control messages.
+
+        Contract reference: docs/redis-message-reference.md
+        """
+        logging.info("Hardware monitor task starting up")
+
+        # Connect to Redis
         try:
-            client = redis.Redis(
+            self._redis_client = redis.Redis(
                 unix_socket_path=self.redis_socket, decode_responses=True
             )
-            client.ping()
-            pubsub = client.pubsub()
-            channels = (
-                self.redis_out_channel,
-                self.redis_events_channel,
-                self.redis_race_state_channel,
-            )
-            pubsub.subscribe(*channels)
-            logging.info("Redis reader subscribed to channels: %s", ", ".join(channels))
+            self._redis_client.ping()
+            logging.info("Connected to Redis")
+        except Exception as e:
+            logging.error(f"Failed to connect to Redis: {e}")
+            self.notify(f"Failed to connect to Redis: {e}", severity="error")
+            return
 
-            # Request hardware version so the header shows it right away.
-            try:
-                cmd = build_command_envelope("request_status", source="franklin_tui")
-                validated = parse_command_envelope(cmd)
-                client.publish(self.redis_in_channel, json.dumps(validated))
-            except Exception as exc:
-                logging.error("Failed to publish request_status: %s", exc)
+        # Create pub/sub instance
+        self._redis_pubsub = self._redis_client.pubsub()
+        channels = (
+            self.redis_out_channel,
+            self.redis_events_channel,
+            self.redis_race_state_channel,
+        )
+        self._redis_pubsub.subscribe(*channels)
+        logging.info("Subscribed to Redis channels: %s", ", ".join(channels))
 
-            # Load retained snapshot so a freshly-started TUI shows current state.
-            try:
-                payload = client.get(self.redis_race_state_latest_key)
-                if isinstance(payload, str):
-                    data = json.loads(payload)
-                    if isinstance(data, dict):
-                        self._incoming_messages.put(
-                            (self.redis_race_state_channel, data)
-                        )
-            except Exception as exc:
-                logging.error("Failed to load latest snapshot: %s", exc)
+        # Ask the hardware monitor to report its status (including version) so
+        # the header shows the running monitor version right away, even when the
+        # TUI starts after the monitor's initial broadcast.
+        self._publish_command("request_status")
 
-            self._incoming_messages.put(("__connected__", {}))
+        self.lap_counter_detected = False
+        self._last_lap_counter_signal_time = None
 
-            while not self._quit_event.is_set():
-                message = pubsub.get_message(timeout=0.1)
-                if message and message.get("type") == "message":
-                    channel = message.get("channel")
-                    data = message.get("data")
+        # Render the retained snapshot so a freshly-started TUI shows current
+        # state without waiting for the next publish.
+        self._load_latest_snapshot()
+
+        try:
+            while True:
+                # Get messages from Redis (non-blocking with timeout)
+                message = self._redis_pubsub.get_message(timeout=0.1)
+
+                if message and message["type"] == "message":
                     try:
-                        parsed = (
+                        channel = message.get("channel")
+                        data = message["data"]
+                        msg: dict[str, Any] = (
                             json.loads(data) if isinstance(data, (str, bytes)) else {}
                         )
-                        if isinstance(parsed, dict) and isinstance(channel, str):
-                            self._incoming_messages.put((channel, parsed))
-                    except json.JSONDecodeError:
-                        pass
 
-        except Exception as exc:
-            logging.error("Redis reader thread error: %s", exc)
+                        if channel == self.redis_race_state_channel:
+                            self.handle_snapshot(msg)
+                        else:
+                            self._handle_hardware_message(msg)
+                    except json.JSONDecodeError as e:
+                        logging.error(f"Failed to parse Redis message: {e}")
+
+                # Small sleep to prevent busy-waiting
+                await asyncio.sleep(0.01)
+
+        except asyncio.CancelledError:
+            logging.info("Hardware monitor task cancelled")
+
         finally:
-            if pubsub:
-                try:
-                    pubsub.unsubscribe()
-                    pubsub.close()
-                except Exception:
-                    pass
-            if client:
-                try:
-                    client.close()
-                except Exception:
-                    pass
-            logging.info("Redis reader thread finished")
+            # Cleanup Redis connection
+            if self._redis_pubsub:
+                self._redis_pubsub.unsubscribe()
+                self._redis_pubsub.close()
+            if self._redis_client:
+                self._redis_client.close()
+            logging.info("Redis connections closed")
 
-    async def _drain_messages(self) -> None:
-        """Drain incoming messages from the reader thread on the main async thread.
-
-        This is the only consumer of ``self._incoming_messages``. It runs as an
-        ``asyncio`` task so ``_handle_hardware_message`` (which calls Textual
-        APIs like ``notify`` and ``set_timer``) always executes on the main
-        event-loop thread.
-
-        ``await asyncio.sleep(0)`` after each message yields to the event loop
-        so pending key events are processed promptly even during a burst of
-        Redis traffic.
-        """
-        while not self._quit_event.is_set():
-            try:
-                channel, msg = self._incoming_messages.get_nowait()
-            except queue.Empty:
-                await asyncio.sleep(0.05)
-                continue
-
-            if channel == self.redis_race_state_channel:
-                self.handle_snapshot(msg)
-            elif channel == "__connected__":
-                self.lap_counter_detected = False
-                self._last_lap_counter_signal_time = None
-            else:
-                self._handle_hardware_message(msg)
-
-            await asyncio.sleep(0)
+    def _load_latest_snapshot(self) -> None:
+        """Fetch the retained snapshot so late joiners render current state."""
+        if not self._redis_client:
+            return
+        try:
+            payload = self._redis_client.get(self.redis_race_state_latest_key)
+        except Exception as exc:
+            logging.error("Failed to read latest snapshot: %s", exc)
+            return
+        if not isinstance(payload, str):
+            return
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            logging.error("Retained snapshot is not valid JSON")
+            return
+        if isinstance(data, dict):
+            self.handle_snapshot(data)
 
     def handle_snapshot(self, data: dict[str, Any]) -> None:
         """Apply an authoritative race-state snapshot from the recorder."""
@@ -786,34 +770,9 @@ class Franklin(App[Any]):  # type: ignore[type-arg]
             display.refresh_display()
 
     async def on_mount(self) -> None:
-        # Connect a main-thread Redis client for publishing commands and
-        # checking the recorder lock. The reader thread creates its own
-        # separate client for subscribing.
-        try:
-            self._redis_client = redis.Redis(
-                unix_socket_path=self.redis_socket, decode_responses=True
-            )
-            self._redis_client.ping()
-        except Exception as e:
-            logging.error("Failed to connect Redis client for main thread: %s", e)
-
         asyncio.create_task(self.refresh_lap_data())
-        asyncio.create_task(self._drain_messages())
-
-        self._redis_thread = threading.Thread(target=self._redis_reader, daemon=True)
-        self._redis_thread.start()
-
+        asyncio.create_task(self.hardware_monitor_task())
         self.set_interval(2.0, self._update_recorder_banner)
-
-    async def action_quit(self) -> None:
-        """Quit the TUI."""
-        self._quit_event.set()
-        try:
-            if self._redis_client:
-                self._redis_client.close()
-        except Exception:
-            pass
-        self.exit()
 
     def _update_recorder_banner(self) -> None:
         """Show/hide the big banner based on whether a recorder is alive.
@@ -1061,5 +1020,4 @@ if __name__ == "__main__":
         last_race_contestant_ids=last_race_contestant_ids,
         racer_color_assignments=racer_color_assignments,
     )
-
     app.run()
