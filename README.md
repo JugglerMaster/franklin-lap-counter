@@ -11,6 +11,8 @@ You need
 
  After installing RasberryPI OS you run the Ansible playbooks included in this project and it setups the PI as a race tracking system.
 
+ **Note:** Ethernet must be connected during initial install for package downloads and system configuration. If you do not need the hotspot/router stack, set `franklin_enable_hotspot: false` in `playbooks/group_vars/all.yml`.
+
 ## Features
 
 - Race Mode
@@ -95,6 +97,8 @@ Example `playbooks/inventory.ini`:
 [pi]
 franklin-pi ansible_user=franklin ansible_host=10.27.1.64
 ```
+
+**Note:** The `franklin` user is automatically added to the `sudo` group during setup (`playbooks/20-python-venv.yml`), so it has sudo access for managing services and packages.
 
 ---
 

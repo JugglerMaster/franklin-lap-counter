@@ -82,7 +82,7 @@ ansible-playbook -i playbooks/inventory.ini playbooks/site.yml \
 - `15-franklin-user.yml` creates a dedicated runtime user (`franklin` by default), sets shell to zsh, and installs Ghostty terminfo for that user.
 - Ghostty terminfo install uses `infocmp -x xterm-ghostty` from the control machine when missing on the target.
 - Boot behavior is configurable with `franklin_enable_autologin`, `franklin_enable_autostart`, `franklin_enable_wayland_boot`, and `franklin_autologin_tty` in `group_vars/all.yml`.
-- Hotspot/router behavior is configurable with `franklin_ap_*` vars in `group_vars/all.yml`.
+- Hotspot/router behavior is configurable with `franklin_enable_hotspot` (default: true) and `franklin_ap_*` vars in `group_vars/all.yml`.
 - Uplink interface selection is portable by default: `franklin_uplink_interface: auto` resolves from the Pi's default route and falls back to `franklin_uplink_interface_fallback` for offline setups.
 - WayVNC behavior is configurable with `franklin_enable_wayvnc`, `franklin_wayvnc_bind_address`, `franklin_wayvnc_port`, `franklin_wayvnc_enable_auth`, `franklin_wayvnc_username`, and `franklin_wayvnc_password` in `group_vars/all.yml`.
 - Firmware display setting uses `pi_firmware_config_path` (defaults to `/boot/firmware/config.txt`) and enforces `hdmi_force_hotplug=1`.
