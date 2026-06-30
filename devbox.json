@@ -109,6 +109,9 @@
       "ansible:reboot": [
         "ansible-playbook -i playbooks/inventory.ini playbooks/63-reboot.yml"
       ],
+      "ansible:final-reboot": [
+        "ansible-playbook -i playbooks/inventory.ini playbooks/66-final-reboot.yml"
+      ],
       "vnc:open-tunnel": [
         "echo 'Opening SSH tunnel localhost:5901 -> 127.0.0.1:5900 on Pi (Ctrl+C to stop)'",
         "ssh -N -L 5901:127.0.0.1:5900 jachin@10.27.1.64"

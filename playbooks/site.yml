@@ -14,3 +14,4 @@
 - import_playbook: 57-hdmi-hotplug.yml
 - import_playbook: 58-wayvnc.yml
 - import_playbook: 60-system-info.yml
+- import_playbook: 66-final-reboot.yml
