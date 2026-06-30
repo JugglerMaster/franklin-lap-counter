@@ -63,7 +63,7 @@ python_packages:
 # Raspberry Pi AP/router (hotspot) settings
 # Set to false to disable the hotspot playbook entirely (skips hostapd, dnsmasq, nftables AP config).
 # NOTE: Ethernet must be connected during initial install for package downloads and system configuration.
-franklin_enable_hotspot: true
+franklin_enable_hotspot: false
 franklin_ap_interface: wlan0
 # Uplink can be set explicitly (e.g. eth0), or left as auto to resolve from
 # the Pi's current default IPv4 route (portable across different networks).

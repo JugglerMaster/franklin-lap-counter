@@ -53,7 +53,6 @@
         owner: "{{ franklin_user }}"
         group: "{{ franklin_group }}"
         recurse: true
-
     - name: Remove temporary terminfo source file
       ansible.builtin.file:
         path: /tmp/xterm-ghostty.terminfo
