@@ -301,7 +301,7 @@ class Franklin(App[Any]):  # type: ignore[type-arg]
         self._recorder_present_cached: bool | None = None
         self._redis_client = None
         self._redis_pubsub = None
-        self.config_path = Path("franklin.config.json")
+        self.config_path = Path("db") / "franklin.config.json"
         self.update_subtitle()
 
     def update_subtitle(self) -> None:

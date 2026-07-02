@@ -1123,6 +1123,12 @@
                             }
                         }
 
+                        if (data.type === "preferences_changed") {
+                            fetchConfig().catch((err) => {
+                                console.warn("Failed to reload config after preferences_changed:", err);
+                            });
+                        }
+
                         addEvent(data);
                     } catch (e) {
                         console.error("Error parsing message:", e);

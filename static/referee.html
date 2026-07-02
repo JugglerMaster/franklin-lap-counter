@@ -937,6 +937,8 @@
             countdownActive = false;
           }
           log(JSON.stringify(msg), msg);
+        } else if (msg.type === 'preferences_changed') {
+          loadRacers();
         } else {
           log(JSON.stringify(msg), msg);
         }

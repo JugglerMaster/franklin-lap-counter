@@ -300,6 +300,12 @@
                         <option value="8bit">8-Bit</option>
                     </select>
                 </div>
+                <div class="row" id="renameRow" style="display:none">
+                    <label for="renameInput">Rename:</label>
+                    <input type="text" id="renameInput" placeholder="Enter new name" style="flex:1;min-width:150px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;min-height:44px" />
+                    <button type="button" id="renameSaveBtn">Save</button>
+                </div>
+                <div id="renameStatus" class="meta" style="margin-top:4px"></div>
             </div>
 
             <div class="card">
@@ -360,6 +366,10 @@
                 detailContent: document.getElementById("detailContent"),
                 soundBtn: document.getElementById("soundBtn"),
                 soundStyleSelect: document.getElementById("soundStyleSelect"),
+                renameRow: document.getElementById("renameRow"),
+                renameInput: document.getElementById("renameInput"),
+                renameSaveBtn: document.getElementById("renameSaveBtn"),
+                renameStatus: document.getElementById("renameStatus"),
             };
 
             // Sync the select element to the loaded setting
@@ -950,6 +960,13 @@
                             }
                         }
 
+                        if (type === "preferences_changed") {
+                            dbg("preferences_changed", "refreshing");
+                            renderAll().catch((err) => {
+                                el.connection.textContent = `Refresh error: ${err.message}`;
+                            });
+                        }
+
                         // Log unhandled message types (skip noisy internal traffic)
                         if (type && !["connected", "heartbeat"].includes(type)) {
                             dbg("unhandled", JSON.stringify(msg));
@@ -964,6 +981,58 @@
                 renderAll().catch((err) => {
                     el.connection.textContent = `Render error: ${err.message}`;
                 });
+                // Show/hide rename row based on selection
+                el.renameRow.style.display = state.selectedRacerId ? "flex" : "none";
+                if (state.selectedRacerId) {
+                    const racer = chosenRacer();
+                    el.renameInput.value = racer ? racer.name : "";
+                    el.renameInput.placeholder = "Enter new name";
+                }
+                el.renameStatus.textContent = "";
+            });
+
+            async function doRename() {
+                if (!state.selectedRacerId) return;
+                const name = el.renameInput.value.trim();
+                if (!name) {
+                    el.renameStatus.textContent = "Name cannot be empty";
+                    el.renameStatus.style.color = "var(--warn)";
+                    return;
+                }
+                el.renameStatus.textContent = "Saving...";
+                el.renameStatus.style.color = "var(--muted)";
+                try {
+                    const res = await fetch("/api/rename", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ racer_id: state.selectedRacerId, name }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) {
+                        el.renameStatus.textContent = `Error: ${data.error || "Failed"}`;
+                        el.renameStatus.style.color = "var(--bad)";
+                        return;
+                    }
+                    el.renameStatus.textContent = "Saved!";
+                    el.renameStatus.style.color = "var(--good)";
+                    el.renameInput.value = name;
+                    // Refresh data to pick up the new name
+                    renderAll().catch((err) => {
+                        el.connection.textContent = `Refresh error: ${err.message}`;
+                    });
+                    setTimeout(() => { el.renameStatus.textContent = ""; }, 3000);
+                } catch (err) {
+                    el.renameStatus.textContent = `Error: ${err.message}`;
+                    el.renameStatus.style.color = "var(--bad)";
+                }
+            }
+
+            el.renameSaveBtn.addEventListener("click", doRename);
+
+            el.renameInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") {
+                    doRename();
+                }
             });
 
             el.refreshBtn.addEventListener("click", () => {

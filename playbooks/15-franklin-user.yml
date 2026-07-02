@@ -19,6 +19,14 @@
         home: "{{ franklin_home }}"
         state: present
 
+    - name: Ensure franklin user can sudo without a password
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/franklin
+        line: "{{ franklin_user }} ALL=(ALL) NOPASSWD: ALL"
+        mode: "0440"
+        validate: visudo -cf %s
+        create: true
+
     - name: Ensure app destination directory exists and is owned by franklin
       ansible.builtin.file:
         path: "{{ pi_dest_dir }}"

@@ -64,6 +64,11 @@ Supported commands:
   - fields: `racer_id` (required), optional `reason`
 - `request_status`
   - Request the current status of the hardware monitor (version, simulation mode, connection state). Responsive event is published on `hardware:out` as a `hardware_status` type.
+- `update_contestant_name`
+  - Updates a driver's name in the persisted config. Consumed by the race recorder (sole DB writer).
+  - fields: `racer_id` (required, positive int), `name` (required, non-empty string)
+  - After processing, the recorder calls `gui_config.write_config()` which persists to SQLite and publishes `preferences_changed` on `franklin:events`
+  - Note: this command can be sent from any client (including the driver web app); it is not restricted to the TUI/GUI
 
 Notes:
 
@@ -317,7 +322,7 @@ If `franklin:race_state:latest` is absent (recorder not yet running), views fall
 ## `driver_web_app.py`
 
 - **Subscribes:** `hardware:out`, `franklin:events`, `franklin:race_state`
-- **Publishes to Redis:** none
+- **Publishes to Redis:** `hardware:in` (`update_contestant_name` command via `POST /api/rename`)
 - **Forwards to browser clients:** all received Redis JSON messages over WebSocket
 
 ## `referee_web_app.py`

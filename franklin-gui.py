@@ -120,7 +120,7 @@ class FranklinGuiApp(Gtk.Application):
         self._redis_client: redis.Redis | None = None
         self._redis_pubsub = None
 
-        self.config_path = Path("franklin.config.json")
+        self.config_path = Path("db") / "franklin.config.json"
 
         self.lap_counter_detected = False
         self._last_lap_counter_signal_time: float | None = None
@@ -138,6 +138,7 @@ class FranklinGuiApp(Gtk.Application):
         self.start_btn: Gtk.Button | None = None
         self.stop_btn: Gtk.Button | None = None
         self.reset_btn: Gtk.Button | None = None
+        self.pause_btn: Gtk.Button | None = None
         self.time_label: Gtk.Label | None = None
         self.state_label: Gtk.Label | None = None
         self.detect_label: Gtk.Label | None = None
@@ -230,6 +231,7 @@ class FranklinGuiApp(Gtk.Application):
     def _sync_controls_with_race_state(self) -> None:
         running = self.snapshot.is_going
         starting = self._start_sequence_running
+        paused = self.snapshot.state == "paused"
 
         start_action = self.lookup_action("start_race")
         if start_action:
@@ -246,6 +248,17 @@ class FranklinGuiApp(Gtk.Application):
         mode_action = self.lookup_action("mode")
         if mode_action:
             mode_action.set_enabled(not running and not starting)
+
+        if self.pause_btn:
+            if paused:
+                self.pause_btn.set_label("Resume")
+                self.pause_btn.set_sensitive(True)
+            elif running:
+                self.pause_btn.set_label("Pause")
+                self.pause_btn.set_sensitive(True)
+            else:
+                self.pause_btn.set_label("Pause")
+                self.pause_btn.set_sensitive(False)
 
             # Sync the checked state of GIO action "mode" with the actual race mode
             if self.snapshot.is_going and self.snapshot.race_mode:
@@ -526,9 +539,20 @@ class FranklinGuiApp(Gtk.Application):
         root.append(recorder_banner)
         root.append(clock_frame)
         root.append(status)
+        # Pause/Resume button row
+        pause_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        pause_row.set_halign(Gtk.Align.CENTER)
+        pause_btn = Gtk.Button(label="Pause")
+        pause_btn.set_sensitive(False)
+        pause_btn.add_css_class("suggested-action")
+        pause_btn.connect("clicked", lambda _: self._action_pause_resume(None, None))
+        self.pause_btn = pause_btn
+        pause_row.append(pause_btn)
+
         root.append(panes)
         root.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
         root.append(status_bar)
+        root.append(pause_row)
 
         window.set_child(root)
 

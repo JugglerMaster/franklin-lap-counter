@@ -15,6 +15,7 @@ set -euo pipefail
 APP_DIR="/opt/franklin-lap-counter"
 BIN_DIR="${APP_DIR}/bin"
 LOG_DIR="/var/log/franklin"
+STATIC_DIR="${APP_DIR}/static"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -71,14 +72,13 @@ fi
 
 # ── re-deploy lib files ──────────────────────────────────────────────────
 
-LIB_DIR="${APP_DIR}/lib"
-STATIC_DIR="${APP_DIR}/share/static"
+STATIC_DIR="${APP_DIR}/static"
 
 info "Syncing application files..."
 copy_python() {
     local file="$1"
     if [[ -f "$APP_DIR/$file" ]]; then
-        cp "$APP_DIR/$file" "$LIB_DIR/"
+        cp "$APP_DIR/$file" "$APP_DIR/"
     fi
 }
 
@@ -90,8 +90,8 @@ for f in franklin-race-recorder.py franklin-gui.py franklin-tui.py \
 done
 
 if [[ -d "$APP_DIR/race" ]]; then
-    rm -rf "$LIB_DIR/race"
-    cp -r "$APP_DIR/race" "$LIB_DIR/race"
+    rm -rf "$APP_DIR/race"
+    cp -r "$APP_DIR/race" "$APP_DIR/race"
 fi
 
 if [[ -d "$APP_DIR/static" ]]; then
@@ -103,7 +103,7 @@ cp "$APP_DIR/scripts/start_franklin.py" "$BIN_DIR/franklin-start"
 
 # ── update Python deps ──────────────────────────────────────────────────
 
-VENV_DIR="${APP_DIR}/lib/.venv"
+VENV_DIR="${APP_DIR}/.venv"
 if [[ -d "$VENV_DIR" ]]; then
     info "Upgrading Python dependencies..."
     "$VENV_DIR/bin/pip" install --quiet --upgrade pip

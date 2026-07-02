@@ -24,6 +24,7 @@ def _parse_race_mode(raw_mode: Any, default: RaceMode) -> RaceMode:
 
 def load_initial_config(
     config_path: Path,
+    db_path: Path | None = None,
 ) -> tuple[
     RaceMode,
     int,
@@ -32,7 +33,8 @@ def load_initial_config(
     list[int],
     dict[int, RacerColorScheme],
 ]:
-    db_path = config_path.parent / "franklin.db"
+    if db_path is None:
+        db_path = Path(__file__).resolve().parent / "db" / "franklin.db"
     db = LapDatabase(str(db_path))
 
     race_mode_val = db.get_preference("race_mode")
@@ -147,6 +149,7 @@ def load_initial_config(
 def write_config(
     config_path: Path,
     *,
+    db_path: Path | None = None,
     race_mode: RaceMode,
     total_laps: int,
     race_end_mode: RaceEndMode,
@@ -154,7 +157,8 @@ def write_config(
     last_race_contestant_ids: list[int],
     racer_color_assignments: dict[int, RacerColorScheme],
 ) -> None:
-    db_path = config_path.parent / "franklin.db"
+    if db_path is None:
+        db_path = Path(__file__).resolve().parent / "db" / "franklin.db"
     db = LapDatabase(str(db_path))
 
     normalized_last_race_contestant_ids = sorted(

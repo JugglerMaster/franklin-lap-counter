@@ -51,8 +51,8 @@ If you are deploying to a target Raspberry Pi host over the network, use the fol
 # 1. Perform full machine setup (packages, services, AP configuration, Caddy, etc.)
 devbox run ansible:setup
 
-# 2. Deploy all application artifacts and built binaries to target host
-devbox run ansible:deploy
+# 2. Build the hardware monitor .deb and deploy all artifacts to target host
+devbox run deploy
 
 # 3. Ensure background web apps are up and running in tmux sessions
 devbox run ansible:web-bounce
@@ -125,7 +125,7 @@ If you prefer to start components individually in separate terminals:
 **Terminal 1 - Hardware Simulator:**
 ```bash
 devbox shell
-devbox run rust-hw-sim
+devbox run hardware-monitor:run -- --sim
 ```
 
 **Terminal 2 - Race UI (Text TUI) or GTK GUI:**
@@ -141,7 +141,7 @@ python franklin-gui.py --race
 **Terminal 1 - Hardware Interface:**
 ```bash
 devbox shell
-devbox run rust-hw
+devbox run hardware-monitor:run
 ```
 
 **Terminal 2 - Race UI (Text TUI) or GTK GUI:**
@@ -232,7 +232,7 @@ redis-cli -s ./redis.sock
 
 # Terminal 2: Run hardware monitor in simulator mode
 devbox shell
-cargo run --manifest-path rust/Cargo.toml --bin franklin-hardware-monitor -- --sim
+devbox run hardware-monitor:run -- --sim
 
 # Terminal 3: Publish mock commands
 devbox shell

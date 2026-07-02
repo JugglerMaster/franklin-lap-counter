@@ -5,7 +5,7 @@ Waits for systemd background services (franklin.target) to be ready,
 then launches the GTK GUI in a restart loop so it auto-recovers from crashes.
 
 Intended to be called from sway config:
-  exec /opt/franklin-lap-counter/bin/start_franklin_gui_session
+  exec /opt/franklin-lap-counter/start_franklin_gui_session
 """
 
 import os
@@ -15,9 +15,10 @@ import time
 from datetime import datetime
 
 APP_DIR = "/opt/franklin-lap-counter"
-VENV_PYTHON = f"{APP_DIR}/lib/.venv/bin/python"
-GUI_SCRIPT = f"{APP_DIR}/lib/franklin-gui.py"
+VENV_PYTHON = f"{APP_DIR}/.venv/bin/python"
+GUI_SCRIPT = f"{APP_DIR}/franklin-gui.py"
 GUI_LOG = "/var/log/franklin/franklin-gui.log"
+REDIS_SOCKET = f"{APP_DIR}/run/redis.sock"
 
 FRANKLIN_TARGET = "franklin.target"
 STARTUP_TIMEOUT = 30
@@ -53,10 +54,12 @@ def run_gui():
         log("Starting Franklin GTK GUI...")
         try:
             with open(GUI_LOG, "a") as log_f:
+                gui_env = {**os.environ, "FRANKLIN_REDIS_SOCKET": REDIS_SOCKET}
                 result = subprocess.run(
                     [python_bin, GUI_SCRIPT],
                     stdout=log_f,
                     stderr=subprocess.STDOUT,
+                    env=gui_env,
                 )
             if result.returncode == 0:
                 log("GUI exited normally")

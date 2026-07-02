@@ -5,7 +5,7 @@
   become: true
   vars:
     project_root: "{{ playbook_dir }}/.."
-    pi_dest_dir: "{{ franklin_home }}/franklin-lap-counter"
+    pi_dest_dir: /opt/franklin-lap-counter
 
   pre_tasks:
     - name: Verify SSH connectivity
@@ -80,6 +80,14 @@
         group: "{{ franklin_group }}"
         mode: "0755"
 
+    - name: Ensure log directory exists for systemd service stdout
+      ansible.builtin.file:
+        path: /var/log/franklin
+        state: directory
+        owner: "{{ franklin_user }}"
+        group: "{{ franklin_group }}"
+        mode: "0755"
+
     - name: Copy Debian package to Pi
       ansible.builtin.copy:
         src: "{{ rust_deb_local }}"
@@ -96,41 +104,44 @@
         path: "/tmp/{{ deb_filename }}.deb"
         state: absent
 
-    # ---- Deploy Python application files (same approach as deploy-franklin.yml) ----
+    # ---- Deploy application source files via rsync ----
 
-    - name: Copy Python application files
-      ansible.builtin.copy:
-        src: "{{ item }}"
-        dest: "{{ pi_dest_dir }}/{{ item | basename }}"
-        owner: "{{ franklin_user }}"
-        group: "{{ franklin_group }}"
-        mode: "0644"
-      loop:
-        - "{{ project_root }}/franklin-tui.py"
-        - "{{ project_root }}/franklin-gui.py"
-        - "{{ project_root }}/franklin-race-recorder.py"
-        - "{{ project_root }}/gui_config.py"
-        - "{{ project_root }}/scoreboard_web_app.py"
-        - "{{ project_root }}/referee_web_app.py"
-        - "{{ project_root }}/healthcheck_web_app.py"
-        - "{{ project_root }}/driver_web_app.py"
-        - "{{ project_root }}/racer_colors.py"
-        - "{{ project_root }}/redis_commands.py"
-        - "{{ project_root }}/database.py"
+    # Single-pass rsync from project root replaces per-file copy loops.
+    # Runtime state (.venv, db, run) and build/dev directories are excluded.
+    - name: Deploy application source files via rsync
+      ansible.posix.synchronize:
+        src: "{{ project_root }}/"
+        dest: "{{ pi_dest_dir }}/"
+        rsync_path: "sudo rsync"
+        rsync_opts:
+          - "--chown={{ franklin_user }}:{{ franklin_group }}"
+          - "--exclude=.venv/"
+          - "--exclude=__pycache__/"
+          - "--exclude=*.pyc"
+          - "--exclude=.git/"
+          - "--exclude=rust/"
+          - "--exclude=db/"
+          - "--exclude=run/"
+          - "--exclude=*.log"
+          - "--exclude=*.sock"
+          - "--exclude=*.db"
+          - "--exclude=dump.rdb"
+          - "--exclude=.env"
+          - "--exclude=.github/"
+          - "--exclude=devbox.json"
+          - "--exclude=devbox.lock"
+          - "--exclude=devbox.d/"
+          - "--exclude=.devbox/"
+          - "--exclude=.ruff_cache/"
+          - "--exclude=.lavish/"
+          - "--exclude=.zed/"
+          - "--exclude=playbooks/"
+          - "--exclude=docs/"
+          - "--exclude=terminfo/"
+          - "--exclude=systemd/"
+      become: false
 
-    - name: Deploy startup scripts (executable)
-      ansible.builtin.copy:
-        src: "{{ item.src }}"
-        dest: "{{ pi_dest_dir }}/{{ item.dest }}"
-        owner: "{{ franklin_user }}"
-        group: "{{ franklin_group }}"
-        mode: "0755"
-      loop:
-        - { src: "{{ project_root }}/scripts/start_franklin.py", dest: "start_franklin.py" }
-        - { src: "{{ project_root }}/scripts/start_franklin_gui_session.py", dest: "start_franklin_gui_session.py" }
-
-    # Deploy directory trees with rsync (same approach as deploy-franklin.yml)
-    - name: Deploy static directory via rsync
+    - name: Deploy static directory (with delete)
       ansible.posix.synchronize:
         src: "{{ project_root }}/static/"
         dest: "{{ pi_dest_dir }}/static/"
@@ -143,7 +154,7 @@
           - "--chown={{ franklin_user }}:{{ franklin_group }}"
       become: false
 
-    - name: Deploy race directory via rsync
+    - name: Deploy race directory (with delete)
       ansible.posix.synchronize:
         src: "{{ project_root }}/race/"
         dest: "{{ pi_dest_dir }}/race/"
@@ -156,7 +167,7 @@
           - "--chown={{ franklin_user }}:{{ franklin_group }}"
       become: false
 
-    - name: Deploy tmuxinator directory via rsync
+    - name: Deploy tmuxinator directory (with delete)
       ansible.posix.synchronize:
         src: "{{ project_root }}/tmuxinator/"
         dest: "{{ pi_dest_dir }}/tmuxinator/"
@@ -168,6 +179,53 @@
           - "--delete-excluded"
           - "--chown={{ franklin_user }}:{{ franklin_group }}"
       become: false
+
+    # Startup scripts live under scripts/ in the repo but are expected at the
+    # root of pi_dest_dir (referenced by systemd, wayland-sway, and users).
+    - name: Deploy startup scripts
+      ansible.builtin.copy:
+        src: "{{ project_root }}/scripts/{{ item }}"
+        dest: "{{ pi_dest_dir }}/{{ item }}"
+        owner: "{{ franklin_user }}"
+        group: "{{ franklin_group }}"
+        mode: "0755"
+      loop:
+        - start_franklin.py
+        - start_franklin_gui_session.py
+
+    # ---- Python virtual environment ----
+
+    - name: Ensure Python venv exists at {{ pi_dest_dir }}/.venv
+      ansible.builtin.command:
+        cmd: "python3 -m venv --system-site-packages {{ pi_dest_dir }}/.venv"
+        creates: "{{ pi_dest_dir }}/.venv/bin/activate"
+
+    - name: Check whether GTK gi module is importable in venv
+      ansible.builtin.command:
+        cmd: "{{ pi_dest_dir }}/.venv/bin/python -c 'import gi'"
+      register: venv_gi_check
+      changed_when: false
+      failed_when: false
+
+    - name: Recreate venv with system site packages when gi is missing
+      when: venv_gi_check.rc != 0
+      block:
+        - name: Remove incompatible virtual environment
+          ansible.builtin.file:
+            path: "{{ pi_dest_dir }}/.venv"
+            state: absent
+
+        - name: Recreate virtual environment with system site packages
+          ansible.builtin.command:
+            cmd: "python3 -m venv --system-site-packages {{ pi_dest_dir }}/.venv"
+
+    - name: Ensure franklin owns the virtual environment
+      ansible.builtin.file:
+        path: "{{ pi_dest_dir }}/.venv"
+        state: directory
+        owner: "{{ franklin_user }}"
+        group: "{{ franklin_group }}"
+        recurse: true
 
     # ---- Update Python venv dependencies ----
 
@@ -200,6 +258,6 @@
         msg:
           - "Updated {{ inventory_hostname }} (arch={{ detected_arch }}, rust_target={{ rust_target }})"
           - "Installed franklin-hardware-monitor_{{ pkg_version }}_{{ arch_label }}"
-          - "Deployed Python files, static/, race/, tmuxinator/"
+          - "Deployed application source files, static/, race/, tmuxinator/"
           - "Updated pip dependencies in venv"
           - "Restarted franklin.target"

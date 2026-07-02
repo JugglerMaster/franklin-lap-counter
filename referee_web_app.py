@@ -56,7 +56,7 @@ class RefereeWebAppServer:
         self.redis_client: redis.Redis | None = None  # type: ignore[type-arg]
         self.redis_pubsub: Any | None = None
         self.websockets: set[web.WebSocketResponse] = set()
-        self.db = LapDatabase("franklin.db")
+        self.db = LapDatabase(str(Path(__file__).parent / "db" / "franklin.db"))
         self._pending_operators: dict[str, str] = {}
         self._latest_snapshot: dict[str, Any] | None = None
 
@@ -203,6 +203,9 @@ class RefereeWebAppServer:
         return web.json_response({"ok": True, "published": payload})
 
     async def resume_race_handler(self, request: web.Request) -> web.Response:
+        guard = self._require_race_in_progress()
+        if guard:
+            return guard
         payload = {"command": "resume_race"}
         await self._publish_command(payload)
         return web.json_response({"ok": True, "published": payload})

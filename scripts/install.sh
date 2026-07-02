@@ -15,11 +15,9 @@ set -euo pipefail
 
 APP_NAME="franklin-lap-counter"
 APP_DIR="/opt/${APP_NAME}"
-VENV_DIR="${APP_DIR}/lib/.venv"
-LIB_DIR="${APP_DIR}/lib"
+VENV_DIR="${APP_DIR}/.venv"
 BIN_DIR="${APP_DIR}/bin"
-SHARE_DIR="${APP_DIR}/share"
-STATIC_DIR="${SHARE_DIR}/static"
+STATIC_DIR="${APP_DIR}/static"
 DB_DIR="${APP_DIR}/db"
 RUN_DIR="${APP_DIR}/run"
 SYSTEMD_DIR="${APP_DIR}/systemd"
@@ -188,7 +186,7 @@ fi
 
 if ! $IS_UPDATE; then
     info "Creating directory structure..."
-    mkdir -p "$LIB_DIR" "$BIN_DIR" "$SHARE_DIR" "$STATIC_DIR" "$DB_DIR" "$RUN_DIR" "$SYSTEMD_DIR"
+    mkdir -p "$BIN_DIR" "$STATIC_DIR" "$DB_DIR" "$RUN_DIR" "$SYSTEMD_DIR"
     mkdir -p "$CONFIG_DIR" "$LOG_DIR"
 fi
 
@@ -290,7 +288,7 @@ info "Laying out application files..."
 copy_python() {
     local file="$1"
     if [[ -f "$APP_DIR/$file" ]]; then
-        cp "$APP_DIR/$file" "$LIB_DIR/"
+        cp "$APP_DIR/$file" "$APP_DIR/"
     fi
 }
 
@@ -301,13 +299,13 @@ for f in franklin-race-recorder.py franklin-gui.py franklin-tui.py \
     copy_python "$f"
 done
 
-# Python packages → lib/
+# Python package → race/
 if [[ -d "$APP_DIR/race" ]]; then
-    rm -rf "$LIB_DIR/race"
-    cp -r "$APP_DIR/race" "$LIB_DIR/race"
+    rm -rf "$APP_DIR/race"
+    cp -r "$APP_DIR/race" "$APP_DIR/race"
 fi
 
-# Static web files → share/static/
+# Static web files → static/
 if [[ -d "$APP_DIR/static" ]]; then
     rm -rf "$STATIC_DIR"
     cp -r "$APP_DIR/static" "$STATIC_DIR"
@@ -481,7 +479,7 @@ bindsym $mod+Shift+c reload
 bindsym $mod+Shift+e exec swaynag -t warning -m 'Exit sway?' -b 'Yes' 'swaymsg exit'
 
 # Autostart Franklin GUI
-exec /opt/franklin-lap-counter/bin/start_franklin_gui_session.py
+exec /opt/franklin-lap-counter/start_franklin_gui_session.py
 SWAYEOF
 
     chown -R "${FRANKLIN_USER}:${FRANKLIN_GROUP}" "$SWAY_CONFIG_DIR"
@@ -542,10 +540,10 @@ echo ""
 if $SWAY_ENABLED; then
     echo "  Mode: Full kiosk — reboot to start the Franklin GUI automatically."
 elif $GUI_ENABLED; then
-    echo "  Mode: GUI-ready — run 'sudo -u ${FRANKLIN_USER} ${VENV_DIR}/bin/python ${LIB_DIR}/franklin-gui.py' to launch."
+    echo "  Mode: GUI-ready — run 'sudo -u ${FRANKLIN_USER} ${VENV_DIR}/bin/python ${APP_DIR}/franklin-gui.py' to launch."
 else
     echo "  Mode: Headless — background services + web apps + TUI."
-    echo "  Run the TUI: sudo -u ${FRANKLIN_USER} ${VENV_DIR}/bin/python ${LIB_DIR}/franklin-tui.py"
+    echo "  Run the TUI: sudo -u ${FRANKLIN_USER} ${VENV_DIR}/bin/python ${APP_DIR}/franklin-tui.py"
 fi
 echo ""
 echo "  Manage services: systemctl start|stop|status ${FRANKLIN_TARGET}"

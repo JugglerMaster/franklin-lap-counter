@@ -11,11 +11,13 @@ User=franklin
 Group=franklin
 WorkingDirectory=/opt/franklin-lap-counter
 Environment=FRANKLIN_REDIS_SOCKET=/opt/franklin-lap-counter/run/redis.sock
-ExecStart=/opt/franklin-lap-counter/lib/.venv/bin/python /opt/franklin-lap-counter/lib/franklin-race-recorder.py --db /opt/franklin-lap-counter/db/franklin.db
+ExecStart=/opt/franklin-lap-counter/.venv/bin/python /opt/franklin-lap-counter/franklin-race-recorder.py --db /opt/franklin-lap-counter/db/franklin.db
 Restart=always
 RestartSec=3
 
 # Logging
+LogsDirectory=franklin
+LogsDirectoryMode=0755
 StandardOutput=append:/var/log/franklin/franklin-race-recorder.log
 StandardError=inherit
 

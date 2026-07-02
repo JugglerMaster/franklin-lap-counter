@@ -10,11 +10,13 @@ User=franklin
 Group=franklin
 WorkingDirectory=/opt/franklin-lap-counter
 Environment=FRANKLIN_REDIS_SOCKET=/opt/franklin-lap-counter/run/redis.sock
-ExecStart=/opt/franklin-lap-counter/lib/.venv/bin/python /opt/franklin-lap-counter/lib/healthcheck_web_app.py
+ExecStart=/opt/franklin-lap-counter/.venv/bin/python /opt/franklin-lap-counter/healthcheck_web_app.py
 Restart=always
 RestartSec=3
 
 # Logging
+LogsDirectory=franklin
+LogsDirectoryMode=0755
 StandardOutput=append:/var/log/franklin/franklin-web-healthcheck.log
 StandardError=inherit
 

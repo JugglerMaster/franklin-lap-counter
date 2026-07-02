@@ -33,6 +33,7 @@ import os
 import signal
 import socket
 import time
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -52,7 +53,7 @@ RACE_STATE_CHANNEL = "franklin:race_state"
 RACE_STATE_LATEST_KEY = "franklin:race_state:latest"
 
 LOCK_KEY = "franklin:race_recorder:lock"
-LOCK_TTL_SECONDS = 10
+LOCK_TTL_SECONDS = 30
 LOCK_REFRESH_SECONDS = 4.0
 SNAPSHOT_TICK_SECONDS = 1.0
 
@@ -263,19 +264,63 @@ class RaceRecorder:
         command = msg.get("command")
         if command == "end_race":
             logging.info("Applying end_race from hardware:in command (fallback)")
-            self._apply_and_publish(self.engine.end_race())
+            result = self.engine.end_race()
+            if not getattr(result, "changed", False):
+                in_progress = self.db.get_in_progress_race()
+                if in_progress:
+                    race_id = int(in_progress["id"])
+                    logging.info(
+                        "Engine didn't change state (in-memory race not running); "
+                        "ending in-progress race %s directly", race_id
+                    )
+                    self.db.end_race(race_id, state="finished")
+                    self._publish_snapshot_for_race_id(race_id)
+                    return
+            self._apply_and_publish(result)
             return
         if command == "reset_race":
             logging.info("Applying reset_race from hardware:in command (fallback)")
-            self._apply_and_publish(self.engine.reset())
+            had_race_id = self.engine.current_race_id
+            result = self.engine.reset()
+            if not had_race_id:
+                in_progress = self.db.get_in_progress_race()
+                if in_progress:
+                    race_id = int(in_progress["id"])
+                    logging.info(
+                        "No in-memory race; ending in-progress race %s "
+                        "directly for reset", race_id
+                    )
+                    self.db.end_race(race_id, state="finished")
+                    self._publish_snapshot_for_race_id(race_id)
+                    return
+            self._apply_and_publish(result)
             return
         if command == "pause_race":
             logging.info("Applying pause_race from hardware:in command (fallback)")
-            self._apply_and_publish(self.engine.pause_race())
+            result = self.engine.pause_race()
+            if not getattr(result, "changed", False):
+                in_progress = self.db.get_in_progress_race()
+                if in_progress:
+                    race_id = int(in_progress["id"])
+                    self.db.update_race_state(race_id, "paused")
+                    self._publish_snapshot_for_race_id(race_id)
+                    return
+            self._apply_and_publish(result)
             return
         if command == "resume_race":
             logging.info("Applying resume_race from hardware:in command (fallback)")
-            self._apply_and_publish(self.engine.resume_race())
+            result = self.engine.resume_race()
+            if not getattr(result, "changed", False):
+                in_progress = self.db.get_in_progress_race()
+                if in_progress:
+                    race_id = int(in_progress["id"])
+                    self.db.update_race_state(race_id, "running")
+                    self._publish_snapshot_for_race_id(race_id)
+                    return
+            self._apply_and_publish(result)
+            return
+        if command == "update_contestant_name":
+            self._handle_update_contestant_name(msg)
             return
         if command != "start_race":
             return
@@ -299,6 +344,62 @@ class RaceRecorder:
                 "source": msg.get("source"),
             }
             self._pending_command_start_event = (float(start_at_raw), fallback_msg)
+
+    def _handle_update_contestant_name(self, msg: dict[str, Any]) -> None:
+        """Handle update_contestant_name command from hardware:in."""
+        racer_id = msg.get("racer_id")
+        name = msg.get("name")
+        if not isinstance(racer_id, int) or racer_id <= 0:
+            logging.warning("update_contestant_name: invalid racer_id %r", racer_id)
+            return
+        if not isinstance(name, str) or not name.strip():
+            logging.warning("update_contestant_name: invalid name %r", name)
+            return
+
+        name = name.strip()
+
+        # Load current config to get existing contestants list
+        try:
+            from gui_config import load_initial_config, write_config
+
+            config_path = Path(self.db.db_path).parent / "franklin.config.json"
+            (
+                race_mode,
+                total_laps,
+                race_end_mode,
+                contestants_data,
+                last_race_contestant_ids,
+                racer_color_assignments,
+            ) = load_initial_config(config_path)
+
+            # Find or add the contestant
+            found = False
+            for entry in contestants_data:
+                if isinstance(entry, dict) and int(entry.get("transmitter_id", 0)) == racer_id:
+                    entry["name"] = name
+                    found = True
+                    break
+            if not found:
+                contestants_data.append({"transmitter_id": racer_id, "name": name})
+
+            # Persist to SQLite and broadcast preferences_changed
+            write_config(
+                config_path,
+                race_mode=race_mode,
+                total_laps=total_laps,
+                race_end_mode=race_end_mode,
+                contestants_data=contestants_data,
+                last_race_contestant_ids=last_race_contestant_ids,
+                racer_color_assignments=racer_color_assignments,
+            )
+
+            logging.info(
+                "update_contestant_name: racer_id=%d name=%s (persisted)", racer_id, name
+            )
+        except Exception as exc:
+            logging.error(
+                "update_contestant_name: failed for racer_id=%d: %s", racer_id, exc
+            )
 
     def _handle_start_event(self, msg: dict[str, Any]) -> None:
         at_raw = msg.get("at")
@@ -401,6 +502,10 @@ class RaceRecorder:
             return
         changed = False
         while self._fake_schedule and self._fake_schedule[0][0] <= now_epoch:
+            if not self._refresh_lock():
+                logging.error("Lost recorder lock during fake lap processing; exiting.")
+                self._running = False
+                return
             _, lap_msg = self._fake_schedule.pop(0)
             result = self.engine.ingest(lap_msg)
             if getattr(result, "finished_now", False) and self.persist:
@@ -434,6 +539,36 @@ class RaceRecorder:
             self._publish_end_race()
         if getattr(result, "changed", False):
             self._publish_snapshot()
+
+    def _publish_snapshot_for_race_id(self, race_id: int) -> None:
+        """Publish a finished snapshot when the engine in-memory model can't."""
+        self._snapshot_seq += 1
+        snapshot = {
+            "schema_version": 1,
+            "snapshot_seq": self._snapshot_seq,
+            "snapshot_at": time.time(),
+            "state": "finished",
+            "race_id": race_id,
+            "start_at": None,
+            "end_at": time.time(),
+            "elapsed_seconds": 0.0,
+            "race_mode": "",
+            "total_laps": 0,
+            "effective_total_laps": 0,
+            "race_end_mode": "",
+            "leaderboard": [],
+            "laps_remaining": {"leader": 0, "last_place": 0},
+            "penalties": {},
+            "disqualified": [],
+            "laps": [],
+            "recorder_id": self._recorder_id,
+        }
+        payload = json.dumps(snapshot)
+        try:
+            self.redis.set(RACE_STATE_LATEST_KEY, payload)
+            self.redis.publish(RACE_STATE_CHANNEL, payload)
+        except Exception as exc:
+            logging.error("Failed to publish snapshot: %s", exc)
 
     # ------------------------------------------------------------------ #
     # Publishing
@@ -509,8 +644,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--db",
-        default="franklin.db",
-        help="Path to the SQLite database (default: franklin.db)",
+        default="db/franklin.db",
+        help="Path to the SQLite database (default: db/franklin.db)",
     )
     write_group = parser.add_mutually_exclusive_group()
     write_group.add_argument(

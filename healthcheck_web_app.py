@@ -52,9 +52,8 @@ class HealthCheckWebAppServer:
 
         self.check_runners: dict[str, CheckRunner] = {
             "terminfo_xterm_ghostty": self._check_terminfo_xterm_ghostty,
-            "tmux_sessions": self._check_tmux_sessions,
             "redis_ping": self._check_redis_ping,
-            "heartbeat_sample": self._check_heartbeat_sample,
+            "serialmonitor": self._check_serialmonitor,
             "referee_process": self._check_referee_process,
             "driver_process": self._check_driver_process,
             "wayvnc_process": self._check_wayvnc_process,
@@ -235,15 +234,12 @@ class HealthCheckWebAppServer:
     async def _check_terminfo_xterm_ghostty(self) -> dict[str, Any]:
         return await self._run_command_async(["infocmp", "-x", "xterm-ghostty"])
 
-    async def _check_tmux_sessions(self) -> dict[str, Any]:
-        return await self._run_command_async(["tmux", "ls"])
-
     async def _check_redis_ping(self) -> dict[str, Any]:
         return await self._run_command_async(
             ["redis-cli", "-s", self.redis_socket, "PING"]
         )
 
-    async def _check_heartbeat_sample(self) -> dict[str, Any]:
+    async def _check_serialmonitor(self) -> dict[str, Any]:
         return await self._sample_heartbeat()
 
     async def _check_referee_process(self) -> dict[str, Any]:
@@ -307,10 +303,11 @@ class HealthCheckWebAppServer:
         }
 
     async def _check_hardware_redis_log_tail(self) -> dict[str, Any]:
-        result = await self._run_command_async(
-            ["journalctl", "-u", "franklin-hardware-monitor", "--no-pager", "-n", "20"]
-        )
-        return {"ok": result["returncode"] == 0, "tail": result["stdout"][:2000]}
+        log_path = Path("/var/log/franklin/franklin-hardware-monitor.log")
+        tail = await asyncio.to_thread(self._tail_file, log_path, 20)
+        if tail == "(missing)":
+            return {"ok": False, "tail": "(log file missing)"}
+        return {"ok": True, "tail": tail[:2000]}
 
     async def _check_caddy_service(self) -> dict[str, Any]:
         return await self._run_command_async(

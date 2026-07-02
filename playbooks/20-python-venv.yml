@@ -3,21 +3,6 @@
   hosts: all
   become: true
   tasks:
-    - name: Ensure franklin user is in the sudo group
-      ansible.builtin.user:
-        name: "{{ franklin_user }}"
-        groups: sudo
-        append: true
-    - name: Ensure franklin user can sudo without a password
-      ansible.builtin.lineinfile:
-        path: /etc/sudoers.d/franklin
-        line: "franklin ALL=(ALL) NOPASSWD: ALL"
-        mode: "0440"
-        validate: visudo -cf %s
-        create: true
-    - name: Reboot so franklin user's sudo permissions take effect
-      ansible.builtin.reboot:
-        reboot_timeout: 360
     - name: Ensure destination directory exists and is owned by franklin
       ansible.builtin.file:
         path: "{{ pi_dest_dir }}"
